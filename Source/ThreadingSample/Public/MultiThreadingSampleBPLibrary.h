@@ -182,7 +182,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
 	UTexture2D* GetResult()
-	{	
+	{
 		check(Result && TaskHandle.IsValid());
 		if (TaskHandle.IsCompleted())
 		{
@@ -260,13 +260,13 @@ class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunc
 	static void LoadTextFiles(EAsyncLoadingExecution InExecution, float InSleepTimeInSeconds, const TArray<FString>& InFilesToLoad, TArray<UTextFileResult*>& OutResults);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void BoxFilterTextureUsingParallelFor(UTexture2D* InSourceTexture, int InBoxSize, bool InForceSingleThread, UTexture2D*& OutFilteredTexture);
+	static void BoxFilterTextureUsingParallelFor(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, bool InForceSingleThread, UTexture2D*& OutFilteredTexture);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
 	static void BoxFilterTextureUsingTaskSystem(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, UResultUsingTaskSystem*& OutResult);
-	
+
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void BoxFilterTextureUsingTaskGraphSystem(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, UResultUsingTaskGraphSystem*& OutResult);
+	static void BoxFilterTextureUsingTaskGraphSystem(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, bool InHoldSourceTasks, UResultUsingTaskGraphSystem*& OutResult);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
 	static void CreateRunnable(UMyRunnable*& OutMyRunnable);

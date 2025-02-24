@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Misc/Timespan.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 
 #include "MultiThreadingSampleBPLibrary.generated.h"
@@ -21,6 +22,7 @@ public:
 	bool IsReady() const
 	{
 		check(Future.IsValid());
+		//Retures whether the Future is ready or not.
 		return Future.IsReady();
 	}
 
@@ -29,10 +31,11 @@ public:
 	{
 		check(Future.IsValid());
 		OutFileName = FileName;
+		//Calling Get() will block the caller until Future is ready.
 		OutFileContent = Future.Get();
 	}
 
-	void SetFuture(const FString& InFileName, TFuture<FString>&& InFuture)
+	void SetResult(const FString& InFileName, TFuture<FString>&& InFuture)
 	{
 		FileName = InFileName;
 		Future = MoveTemp(InFuture);
@@ -47,13 +50,14 @@ private:
 UENUM(BlueprintType)
 enum class EAsyncLoadingExecution : uint8
 {
-	AsyncInterface_TaskGraph,
-	AsyncInterface_ThreadPool,
-	AsyncInterface_Thread,
-	AsyncPoolInterface,
-	AsyncThreadInterface
+	AsyncInterface_TaskGraph,  //EAsyncExecution::TaskGraph
+	AsyncInterface_ThreadPool, //EAsyncExecution::ThreadPool
+	AsyncInterface_Thread,     //EAsyncExecution::Thread
+	AsyncPoolInterface,        //AsyncPool()
+	AsyncThreadInterface       //AsyncThread()
 };
 
+//An Runnable class which impliments FRunnable and FSingleThreadRunnable
 class FMyRunnable :public FRunnable, public FSingleThreadRunnable
 {
 public:
@@ -87,6 +91,7 @@ public:
 		UE_LOG(LogMultiThreadingSample, Display, TEXT("Calling FMyRunnable::Exit()."));
 	}
 
+	//This returns a FSingleThreadRunnable pointer
 	virtual FSingleThreadRunnable* GetSingleThreadInterface()
 	{
 		return this;
@@ -94,15 +99,16 @@ public:
 	//End FRunnable
 
 	//Begin FSingleThreadRunnable
+	//Tick() will be called when multi threading is not supported on current platform or is disabled by commandline(-nothreading) or some other settings
 	virtual void Tick() override
 	{
 		ThreadWork();
 	}
 	//End FSingleThreadRunnable
 
-	virtual ~FMyRunnable() = default;
-
 	FMyRunnable() = default;
+
+	virtual ~FMyRunnable() = default;
 
 private:
 	bool Stoped = false;
@@ -125,9 +131,11 @@ public:
 		checkf(!IsRunning, TEXT("Startup() should only be called once!!!"));
 
 		Runnable = new FMyRunnable;
-		Thread = FRunnableThread::Create(Runnable, TEXT("My Runnable Thread"), 0, EThreadPriority::TPri_Lowest);
+		//Create the Runnable Thread baseed on which platform we are running on.
+		//eg. on Windows, This will eventually create a new FRunnableThreadWin instance.
+		RunnableThread = FRunnableThread::Create(Runnable, TEXT("My Runnable Thread"), 0, EThreadPriority::TPri_Lowest);
 
-		if (!Thread)
+		if (!RunnableThread)
 		{
 			UE_LOG(LogMultiThreadingSample, Warning, TEXT("Failed to create runnable thread."));
 			delete Runnable;
@@ -146,8 +154,8 @@ public:
 		{
 			Runnable->Stop();
 
-			delete Thread;
-			Thread = nullptr;
+			delete RunnableThread;
+			RunnableThread = nullptr;
 			delete Runnable;
 			Runnable = nullptr;
 
@@ -162,11 +170,12 @@ public:
 
 private:
 	FMyRunnable* Runnable;
-	FRunnableThread* Thread;
+	FRunnableThread* RunnableThread;
 
 	bool IsRunning = false;
 };
 
+//Warp the result returned using task system
 UCLASS(BlueprintType)
 class UResultUsingTaskSystem :public UObject
 {
@@ -184,6 +193,16 @@ public:
 	UTexture2D* GetResult()
 	{
 		check(Result && TaskHandle.IsValid());
+
+		//Explicitly wait the task to finish(We dont Wait here because calling Wait() will block the caller).
+		//
+		//Wait until task finishing
+		// TaskHandle.Wait();
+		//
+		//Wait until task finishing but with a timeout
+		// FTimespan WaitTime = FTimespan::FromMilliseconds(2);
+		// TaskHandle.Wait(WaitTime);
+
 		if (TaskHandle.IsCompleted())
 		{
 			return Result;
@@ -209,6 +228,7 @@ private:
 	UE::Tasks::FTask TaskHandle;
 };
 
+//Warp the result returned using task graph system
 UCLASS(BlueprintType)
 class UResultUsingTaskGraphSystem :public UObject
 {
@@ -226,6 +246,10 @@ public:
 	UTexture2D* GetResult()
 	{
 		check(Result && TaskEvent.IsValid());
+
+		//Explicitly wait the task to finish(We dont Wait here because calling Wait() will block the caller).
+		// TaskEvent->Wait();
+
 		if (TaskEvent->IsCompleted())
 		{
 			return Result;
@@ -251,6 +275,62 @@ private:
 	FGraphEventRef TaskEvent;
 };
 
+//Warp the result returned using pipe
+UCLASS(BlueprintType)
+class UResultUsingPipe :public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	bool IsReady() const
+	{
+		check(Result && Pipe.IsValid());
+		return !Pipe->HasWork();
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	UTexture2D* GetResult()
+	{
+		check(Result && Pipe.IsValid());
+
+		//Explicitly wait the to be empty(We dont Wait here because calling Wait() will block the caller).
+		// Pipe->WaitUntilEmpty();
+		//Wait with a timeout
+		// FTimespan WaitTime = FTimespan::FromMilliseconds(2);
+		// Pipe->WaitUntilEmpty(WaitTime);
+
+		if (!Pipe->HasWork())
+		{
+			return Result;
+		}
+		else
+		{
+			return nullptr;
+		}
+	}
+
+	void SetResult(UTexture2D* InTexture, TUniquePtr<UE::Tasks::FPipe> InPipe)
+	{
+		check(InTexture && InPipe.IsValid());
+		check(!Result && !Pipe.IsValid());
+
+		Result = InTexture;
+		Pipe = MoveTemp(InPipe);
+	}
+
+	UResultUsingPipe()
+	{
+		Result = nullptr;
+		Pipe = nullptr;
+	}
+
+private:
+	UTexture2D* Result;
+
+	TUniquePtr<UE::Tasks::FPipe> Pipe;
+};
+
 UCLASS()
 class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunctionLibrary
 {
@@ -269,11 +349,17 @@ class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunc
 	static void BoxFilterTextureUsingTaskGraphSystem(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, bool InHoldSourceTasks, UResultUsingTaskGraphSystem*& OutResult);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
+	static void BoxFilterTextureUsingPipe(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, UResultUsingPipe*& OutResult);
+
+	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
+	static void ExecuteNestedTask(int InCurrentCallIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
 	static void CreateRunnable(UMyRunnable*& OutMyRunnable);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
 	static void DoingThreadedWorkUsingFThread();
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void DoingThreadedWorkUsingQueuedThreadPool();
+	static void DoingThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort);
 };

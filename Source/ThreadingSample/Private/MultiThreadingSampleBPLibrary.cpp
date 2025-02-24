@@ -11,6 +11,7 @@ DEFINE_LOG_CATEGORY(LogMultiThreadingSample);
 ----------------------------------------------------------------------------------*/
 FString LoadTextFileToString(const FString& InFileName, float InSleepTimeInSeconds = 0.0f)
 {
+	//InSleepTimeInSeconds is used to simulate a long loading task which we clamp here to a reasonable range.
 	InSleepTimeInSeconds = FMath::Clamp(InSleepTimeInSeconds, 0.0f, 5.0f);
 
 	const FString FullPath = FPaths::ConvertRelativePathToFull(InFileName);
@@ -31,7 +32,7 @@ FString LoadTextFileToString(const FString& InFileName, float InSleepTimeInSecon
 auto LaunchAsyncLoadingTextFile_AsyncInterface_TaskGraph(const FString& InFileName, float InSleepTimeInSeconds = 0.0f)
 {
 	auto Result = NewObject<UTextFileResult>();
-	Result->SetFuture(InFileName, Async(
+	Result->SetResult(InFileName, Async(
 		EAsyncExecution::TaskGraph,
 		[&InFileName, InSleepTimeInSeconds]() {
 			return LoadTextFileToString(InFileName, InSleepTimeInSeconds);
@@ -42,7 +43,7 @@ auto LaunchAsyncLoadingTextFile_AsyncInterface_TaskGraph(const FString& InFileNa
 auto LaunchAsyncLoadingTextFile_AsyncInterface_ThreadPool(const FString& InFileName, float InSleepTimeInSeconds = 0.0f)
 {
 	auto Result = NewObject<UTextFileResult>();
-	Result->SetFuture(InFileName, Async(
+	Result->SetResult(InFileName, Async(
 		EAsyncExecution::ThreadPool,
 		[&InFileName, InSleepTimeInSeconds]() {
 			return LoadTextFileToString(InFileName, InSleepTimeInSeconds);
@@ -53,7 +54,7 @@ auto LaunchAsyncLoadingTextFile_AsyncInterface_ThreadPool(const FString& InFileN
 auto LaunchAsyncLoadingTextFile_AsyncInterface_Thread(const FString& InFileName, float InSleepTimeInSeconds = 0.0f)
 {
 	auto Result = NewObject<UTextFileResult>();
-	Result->SetFuture(InFileName, Async(
+	Result->SetResult(InFileName, Async(
 		EAsyncExecution::Thread,
 		[&InFileName, InSleepTimeInSeconds]() {
 			return LoadTextFileToString(InFileName, InSleepTimeInSeconds);
@@ -64,7 +65,7 @@ auto LaunchAsyncLoadingTextFile_AsyncInterface_Thread(const FString& InFileName,
 auto LaunchAsyncLoadingTextFile_AsyncPoolInterface(const FString& InFileName, float InSleepTimeInSeconds = 0.0f)
 {
 	auto Result = NewObject<UTextFileResult>();
-	Result->SetFuture(InFileName, AsyncPool(
+	Result->SetResult(InFileName, AsyncPool(
 		*GThreadPool,
 		[&InFileName, InSleepTimeInSeconds]() {
 			return LoadTextFileToString(InFileName, InSleepTimeInSeconds);
@@ -78,7 +79,7 @@ auto LaunchAsyncLoadingTextFile_AsyncPoolInterface(const FString& InFileName, fl
 auto LaunchAsyncLoadingTextFile_AsyncThreadInterface(const FString& InFileName, float InSleepTimeInSeconds = 0.0f)
 {
 	auto Result = NewObject<UTextFileResult>();
-	Result->SetFuture(InFileName, AsyncThread(
+	Result->SetResult(InFileName, AsyncThread(
 		[&InFileName, InSleepTimeInSeconds]() {
 			return LoadTextFileToString(InFileName, InSleepTimeInSeconds);
 		},
@@ -129,6 +130,7 @@ void UMultiThreadingSampleBPLibrary::LoadTextFiles(EAsyncLoadingExecution InExec
 	}
 }
 
+//A filter which averages the RGB value of the box range using ParallelFor.
 void BoxFilter(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTexture2D> OutFilteredTexture, int InBoxSize, bool InForceSingleThread)
 {
 	check(InSourceTexture.Get() && OutFilteredTexture.Get());
@@ -158,6 +160,7 @@ void BoxFilter(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTextu
 		int SampleCount = 0;
 		float LinearSumR = 0.0f, LinearSumG = 0.0f, LinearSumB = 0.0f;
 
+		//The box
 		for (int X = -HalfBoxSize; X <= HalfBoxSize; ++X)
 		{
 			for (int Y = -HalfBoxSize; Y <= HalfBoxSize; ++Y)
@@ -197,6 +200,7 @@ void BoxFilter(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTextu
 
 	const double StartTime = FPlatformTime::Seconds();
 
+	//ParallelFor will return until all loop bodies finish execution, so the caller will be blocked.
 	ParallelFor(
 		TEXT("Parallel Box Filter"),
 		TextureWidth * TextureHeight,
@@ -215,6 +219,7 @@ void BoxFilter(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTextu
 	SourceRawImageData->Unlock();
 }
 
+//A function that scales the alpha channel of InSourceTexture using ParallelFor.
 void ScaleAlphaChannel(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTexture2D> OutScaledTexture, float InScaleValue, bool InForceSingleThread)
 {
 	check(InSourceTexture.Get() && OutScaledTexture.Get());
@@ -234,6 +239,7 @@ void ScaleAlphaChannel(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPt
 
 	const double StartTime = FPlatformTime::Seconds();
 
+	//ParallelFor will return until all loop bodies finish execution, so the caller will be blocked.
 	ParallelFor(
 		TEXT("Parallel Scale Alpha Channel"),
 		TextureWidth * TextureHeight,
@@ -254,6 +260,7 @@ void ScaleAlphaChannel(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPt
 	SourceRawImageData->Unlock();
 }
 
+//A function that composites the RGB channels of a texture and the Alpha channel of another texture using ParallelFor.
 void CompositeRGBAValue(TWeakObjectPtr<UTexture2D> InRGBTexture, TWeakObjectPtr<UTexture2D> InATexture, TWeakObjectPtr<UTexture2D> OutTexture, bool InForceSingleThread)
 {
 	check(InRGBTexture.Get() && InATexture.Get() && OutTexture.Get());
@@ -278,6 +285,7 @@ void CompositeRGBAValue(TWeakObjectPtr<UTexture2D> InRGBTexture, TWeakObjectPtr<
 
 	const double StartTime = FPlatformTime::Seconds();
 
+	//ParallelFor will return until all loop bodies finish execution, so the caller will be blocked.
 	ParallelFor(
 		TEXT("Parallel Composite RGBA Value"),
 		TextureWidth * TextureHeight,
@@ -391,7 +399,7 @@ UTexture2D* CreateTransientTextureFromSource(UTexture2D* InSourceTexture, const 
 		SourceRawImageData->Unlock();
 	}
 
-	//Add to root set incase it get GCed.
+	//Add to root set incase it gets GCed.
 	//TODO: RemoveFromRoot
 	OutCreatedResult->AddToRoot();
 	//OutCreatedResult->RemoveFromRoot();
@@ -440,6 +448,9 @@ void UMultiThreadingSampleBPLibrary::BoxFilterTextureUsingTaskSystem(UTexture2D*
 
 	UTexture2D* FirstFilterResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("FirstFilterResult"));
 	UTexture2D* SecondFilterResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("SecondFilterResult"));
+	//We need ScaleAlphaChannelInput here because first filter task and scale alpha channel task could overlap their execution.
+	//The calling of Lock() and Unlock() could assert in such case if we pass InSourceTexture to both tasks.
+	//We just duplicate InSourceTexture to another texture which we pass to scale alpha channel task for simplicity.
 	UTexture2D* ScaleAlphaChannelInput = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelInput"), true);
 	UTexture2D* ScaleAlphaChannelResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelResult"));
 	UTexture2D* CompositeResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("CompositeResult"));
@@ -534,6 +545,43 @@ void UMultiThreadingSampleBPLibrary::BoxFilterTextureUsingTaskSystem(UTexture2D*
 
 	OutResult->SetResult(CompositeResult, CompositeResultUpdateTask);
 }
+
+//When using Task Graph System, user needs to define their own task class/struct.
+class FMyTask
+{
+public:
+	FMyTask(float InValue): SomeVar(InValue)
+	{
+	}
+
+	//Defines some stats related functionality.
+	TStatId GetStatId() const
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FMyTask, STATGROUP_TaskGraphTasks);
+	}
+
+	//Defines which thread to excute this task.
+	static ENamedThreads::Type GetDesiredThread()
+	{
+		return ENamedThreads::AnyBackgroundHiPriTask;
+	}
+
+	//Defines how Task Graph System treats the subsequents of this task.
+	//Can be ESubsequentsMode::TrackSubsequents or ESubsequentsMode::FireAndForget
+	static ESubsequentsMode::Type GetSubsequentsMode()
+	{
+		return ESubsequentsMode::TrackSubsequents;
+	}
+
+	//Defines the task body.
+	void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
+	{
+		SomeVar = SomeVar * 2.0f;
+	}
+
+private:
+	float SomeVar;
+};
 
 class FBoxFilterTask
 {
@@ -682,12 +730,15 @@ void UMultiThreadingSampleBPLibrary::BoxFilterTextureUsingTaskGraphSystem(UTextu
 
 	UTexture2D* FirstFilterResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("FirstFilterResult"));
 	UTexture2D* SecondFilterResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("SecondFilterResult"));
+	//We need ScaleAlphaChannelInput here because first filter task and scale alpha channel task could overlap their execution.
+	//The calling of Lock() and Unlock() could assert in such case if we pass InSourceTexture to both tasks.
+	//We just duplicate InSourceTexture to another texture which we pass to scale alpha channel task for simplicity.
 	UTexture2D* ScaleAlphaChannelInput = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelInput"), true);
 	UTexture2D* ScaleAlphaChannelResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelResult"));
 	UTexture2D* CompositeResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("CompositeResult"));
 
 	//Construnt and hold or construct and dispatch when ready.
-	//If construct and hold, the task will not start execute until we unlock it(And of cource its subsequents will not execute).
+	//If construct and hold, the task will not start execute until we explicitly unlock it(And of cource its subsequents will not execute).
 	auto FirstFilterTask = InHoldSourceTasks ? TGraphTask<FBoxFilterTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndHold(TWeakObjectPtr<UTexture2D>(InSourceTexture), TWeakObjectPtr<UTexture2D>(FirstFilterResult), InBoxSize)
 		: TGraphTask<FBoxFilterTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(TWeakObjectPtr<UTexture2D>(InSourceTexture), TWeakObjectPtr<UTexture2D>(FirstFilterResult), InBoxSize);
 
@@ -735,6 +786,166 @@ void UMultiThreadingSampleBPLibrary::BoxFilterTextureUsingTaskGraphSystem(UTextu
 	OutResult = NewObject<UResultUsingTaskGraphSystem>();
 
 	OutResult->SetResult(CompositeResult, CompositeResultUpdateTask);
+}
+
+void UMultiThreadingSampleBPLibrary::BoxFilterTextureUsingPipe(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, UResultUsingPipe*& OutResult)
+{
+	if (!ValidateParameters(InSourceTexture, InBoxSize, InScaleValue))
+	{
+		OutResult = nullptr;
+		return;
+	}
+
+	UTexture2D* FirstFilterResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("FirstFilterResult"));
+	UTexture2D* SecondFilterResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("SecondFilterResult"));
+	//We dont need this anymore, as we are launching tasks through FPipe.
+	// UTexture2D* ScaleAlphaChannelInput = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelInput"), true);
+	UTexture2D* ScaleAlphaChannelResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelResult"));
+	UTexture2D* CompositeResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("CompositeResult"));
+
+	//We are launching tasks through FPipe.
+	TUniquePtr<UE::Tasks::FPipe> Pipe = MakeUnique<UE::Tasks::FPipe>(TEXT("BoxFilterPipe"));
+
+	auto FirstFilterTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[SourceTexture = TWeakObjectPtr<UTexture2D>(InSourceTexture), FilteredResult = TWeakObjectPtr<UTexture2D>(FirstFilterResult), InBoxSize]()
+		{
+			BoxFilter(SourceTexture, FilteredResult, InBoxSize, false);
+		},
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::None
+	);
+
+	auto FirstFilterResultUpdateTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(FirstFilterResult)]()
+		{
+			TextureToUpdate->UpdateResource();
+		},
+		UE::Tasks::Prerequisites(FirstFilterTask),
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::GameThreadNormalPri //Executed on GameThread.
+	);
+
+	auto SecondFilterTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[SourceTexture = TWeakObjectPtr<UTexture2D>(FirstFilterResult), FilteredResult = TWeakObjectPtr<UTexture2D>(SecondFilterResult), InBoxSize]()
+		{
+			BoxFilter(SourceTexture, FilteredResult, InBoxSize, false);
+		},
+		UE::Tasks::Prerequisites(FirstFilterResultUpdateTask),
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::None
+	);
+
+	auto SecondFilterResultUpdateTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(SecondFilterResult)]()
+		{
+			TextureToUpdate->UpdateResource();
+		},
+		UE::Tasks::Prerequisites(SecondFilterTask),
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::GameThreadNormalPri //Executed on GameThread.
+	);
+
+	auto ScaleAlphaChannelTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[SourceTexture = TWeakObjectPtr<UTexture2D>(/*ScaleAlphaChannelInput*/InSourceTexture), ScaledResult = TWeakObjectPtr<UTexture2D>(ScaleAlphaChannelResult), InScaleValue]()
+		{
+			ScaleAlphaChannel(SourceTexture, ScaledResult, InScaleValue, false);
+		},
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::None
+	);
+
+	auto ScaleAlphaChannelResultUpdateTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(ScaleAlphaChannelResult)]()
+		{
+			TextureToUpdate->UpdateResource();
+		},
+		UE::Tasks::Prerequisites(ScaleAlphaChannelTask),
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::GameThreadNormalPri //Executed on GameThread.
+	);
+
+	auto CompositeTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[RGBTexture = TWeakObjectPtr<UTexture2D>(SecondFilterResult), AlphaTexture = TWeakObjectPtr<UTexture2D>(ScaleAlphaChannelResult), Result = TWeakObjectPtr<UTexture2D>(CompositeResult)]()
+		{
+			CompositeRGBAValue(RGBTexture, AlphaTexture, Result, false);
+		},
+		UE::Tasks::Prerequisites(SecondFilterResultUpdateTask, ScaleAlphaChannelResultUpdateTask),
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::None
+	);
+
+	auto CompositeResultUpdateTask = Pipe->Launch(
+		UE_SOURCE_LOCATION,
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(CompositeResult)]()
+		{
+			TextureToUpdate->UpdateResource();
+		},
+		UE::Tasks::Prerequisites(CompositeTask),
+		LowLevelTasks::ETaskPriority::BackgroundHigh,
+		UE::Tasks::EExtendedTaskPriority::GameThreadNormalPri //Executed on GameThread.
+	);
+
+	OutResult = NewObject<UResultUsingPipe>();
+
+	OutResult->SetResult(CompositeResult, MoveTemp(Pipe));
+}
+
+//Notice that nested task is used to define the completion timeing of the outer task, not the execution order of outer task and nested task.
+//Its kinda like that the nested task is a prerequisite of the outer task but its really not that.
+//Nested task can execute concurrently with outer task, but a task can noly begin execute when all its prerequisites are completed.
+void UMultiThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
+{
+	auto AnotherNestedTask = UE::Tasks::Launch(
+		UE_SOURCE_LOCATION,
+		[=]()
+		{
+			UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing another nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
+			FPlatformProcess::Sleep(0.4);
+		},
+		UE::Tasks::ETaskPriority::BackgroundLow,
+		UE::Tasks::EExtendedTaskPriority::None
+	);
+
+	auto OuterTask = UE::Tasks::Launch(
+		UE_SOURCE_LOCATION,
+		[&]()
+		{
+			//We are lauching inside a task.
+			auto NestedTask = UE::Tasks::Launch(
+				UE_SOURCE_LOCATION,
+				[=]()
+				{
+					UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
+					FPlatformProcess::Sleep(0.3);
+				},
+				UE::Tasks::ETaskPriority::BackgroundLow,
+				UE::Tasks::EExtendedTaskPriority::None
+			);
+
+			UE::Tasks::AddNested(AnotherNestedTask);
+			UE::Tasks::AddNested(NestedTask);
+
+			UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing outer task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
+			FPlatformProcess::Sleep(0.1);
+		},
+		UE::Tasks::ETaskPriority::BackgroundLow,
+		UE::Tasks::EExtendedTaskPriority::None
+	);
+
+	//Here we dont really care about the result, just wait with a timeout.
+	OuterTask.Wait(FTimespan::FromMilliseconds(100));
+	
+	//This can be true or false, depending on:
+	//1. Whether the nested tasks have completed or not.
+	//2. If all the nested tasks have completed, Whether the OuterTask itself has completed or not.
+	bool IsCompleted = OuterTask.IsCompleted();
 }
 
 void UMultiThreadingSampleBPLibrary::CreateRunnable(UMyRunnable*& OutMyRunnable)
@@ -786,6 +997,7 @@ void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingFThread()
 	Thread.Reset();
 }
 
+//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FDummyEmptyWork :public IQueuedWork
 {
 public:
@@ -816,6 +1028,7 @@ public:
 	}
 };
 
+//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FFibonacciComputationWork :public IQueuedWork
 {
 public:
@@ -849,6 +1062,7 @@ private:
 	int N = 0;
 };
 
+//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FOutputStringToLogWork :public IQueuedWork
 {
 public:
@@ -891,7 +1105,78 @@ private:
 
 const TCHAR* FOutputStringToLogWork::DebugName = TEXT("OutputStringToLogTask");
 
-void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool()
+//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
+class FSortIntArrayWork :public IQueuedWork
+{
+public:
+	virtual void DoThreadedWork()override
+	{
+		if (!ArrayToSort.Num())
+		{
+			UE_LOG(LogMultiThreadingSample, Warning, TEXT("Empty array!!!"));
+		}
+
+		FString Content = BuildString(ArrayToSort);
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("FSortIntArrayWork::Before sort: %s"), *Content);
+
+		Algo::Sort(ArrayToSort);
+
+		Content = BuildString(ArrayToSort);
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("FSortIntArrayWork::After sort: %s"), *Content);
+		delete this;
+	}
+
+	virtual void Abandon()override
+	{
+		//Do nothing
+	}
+
+	virtual EQueuedWorkFlags GetQueuedWorkFlags()const override
+	{
+		return EQueuedWorkFlags::None;
+	}
+
+	virtual int64 GetRequiredMemory()const override
+	{
+		return -1;
+	}
+
+	virtual const TCHAR* GetDebugName()const override
+	{
+		return nullptr;
+	}
+
+	FSortIntArrayWork(const TArray<int32>& InArrayToSort):ArrayToSort(InArrayToSort)
+	{
+	}
+
+private:
+	TArray<int32> ArrayToSort;
+
+	const TCHAR* BuildString(const TArray<int32>& InArray)
+	{
+		TStringBuilder<2048> StringBuilder;
+		StringBuilder << "[";
+
+		for (int i = 0; i < InArray.Num(); ++i)
+		{
+			if (i != InArray.Num() - 1)
+			{
+				StringBuilder << InArray[i] << ",";
+			}
+			else
+			{
+				StringBuilder << InArray[i];
+			}
+		}
+
+		StringBuilder << "]";
+
+		return StringBuilder.ToString();
+	}
+};
+
+void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort)
 {
 	FQueuedThreadPool* ThreadPool = GThreadPool;
 
@@ -901,9 +1186,11 @@ void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool()
 
 	check(ThreadPool);
 
+	//Simply add work to the thread pool.
 	ThreadPool->AddQueuedWork(new FDummyEmptyWork);
 	ThreadPool->AddQueuedWork(new FFibonacciComputationWork(20));
 	ThreadPool->AddQueuedWork(new FFibonacciComputationWork(15));
 	ThreadPool->AddQueuedWork(new FOutputStringToLogWork("Test"));
 	ThreadPool->AddQueuedWork(new FOutputStringToLogWork("Test1"));
+	ThreadPool->AddQueuedWork(new FSortIntArrayWork(InArrayToSort));
 }

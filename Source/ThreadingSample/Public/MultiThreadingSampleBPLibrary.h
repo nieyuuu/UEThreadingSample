@@ -154,6 +154,7 @@ public:
 		{
 			Runnable->Stop();
 
+			//Delete the thread first.
 			delete RunnableThread;
 			RunnableThread = nullptr;
 			delete Runnable;
@@ -173,6 +174,13 @@ private:
 	FRunnableThread* RunnableThread;
 
 	bool IsRunning = false;
+};
+
+UENUM(BlueprintType)
+enum class EFilterType : uint8
+{
+	BoxFilter,
+	GaussianFilter
 };
 
 //Warp the result returned using task system
@@ -340,16 +348,16 @@ class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunc
 	static void LoadTextFiles(EAsyncLoadingExecution InExecution, float InSleepTimeInSeconds, const TArray<FString>& InFilesToLoad, TArray<UTextFileResult*>& OutResults);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void BoxFilterTextureUsingParallelFor(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, bool InForceSingleThread, UTexture2D*& OutFilteredTexture);
+	static void FilterTextureUsingParallelFor(UTexture2D* InSourceTexture, EFilterType InFilterType, int InFilterSize, float InScaleValue, bool InForceSingleThread, UTexture2D*& OutFilteredTexture);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void BoxFilterTextureUsingTaskSystem(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, UResultUsingTaskSystem*& OutResult);
+	static void FilterTextureUsingTaskSystem(UTexture2D* InSourceTexture, EFilterType InFilterType, int InFilterSize, float InScaleValue, UResultUsingTaskSystem*& OutResult);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void BoxFilterTextureUsingTaskGraphSystem(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, bool InHoldSourceTasks, UResultUsingTaskGraphSystem*& OutResult);
+	static void FilterTextureUsingTaskGraphSystem(UTexture2D* InSourceTexture, EFilterType InFilterType, int InFilterSize, float InScaleValue, bool InHoldSourceTasks, UResultUsingTaskGraphSystem*& OutResult);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void BoxFilterTextureUsingPipe(UTexture2D* InSourceTexture, int InBoxSize, float InScaleValue, UResultUsingPipe*& OutResult);
+	static void FilterTextureUsingPipe(UTexture2D* InSourceTexture, EFilterType InFilterType, int InFilterSize, float InScaleValue, UResultUsingPipe*& OutResult);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
 	static void ExecuteNestedTask(int InCurrentCallIndex);
@@ -361,5 +369,8 @@ class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunc
 	static void DoingThreadedWorkUsingFThread();
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void DoingThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort);
+	static void DoingThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute);
+
+	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
+	static void RunLowLevelTaskTest();
 };

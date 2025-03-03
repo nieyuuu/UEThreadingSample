@@ -1,7 +1,9 @@
 #include "MultiThreadingSampleBPLibrary.h"
 
 #include "Misc/Timeout.h"
+#include "Misc/QueuedThreadPoolWrapper.h"
 #include "Math/GuardedInt.h"
+#include "Algo/RandomShuffle.h"
 #include "AssetCompilingManager.h"
 
 DEFINE_LOG_CATEGORY(LogMultiThreadingSample);
@@ -133,7 +135,6 @@ void UMultiThreadingSampleBPLibrary::LoadTextFiles(EAsyncLoadingExecution InExec
 /*----------------------------------------------------------------------------------
 	Texture Filter Samples
 ----------------------------------------------------------------------------------*/
-
 void Compute1DBoxFilterKernel(int32 InSize, TArray<float>& OutWeights, TArray<int32>& OutOffsets)
 {
 	const int32 HalfSize = InSize / 2;
@@ -171,16 +172,6 @@ void Compute1DGaussianFilterKernel(int32 InSize, TArray<float>& OutWeights, TArr
 	}
 }
 
-const TCHAR* EFilterTypeToString(EFilterType InFilterType)
-{
-	const TCHAR* ConvertTable[] = {
-		TEXT("BoxFilter"),
-		TEXT("GaussianFilter")
-	};
-
-	return ConvertTable[int32(InFilterType)];
-}
-
 void Compute1DFilterKernel(EFilterType InFilterType, int32 InFilterSize, TArray<float>& OutWeights, TArray<int32>& OutOffsets)
 {
 	OutWeights.Empty();
@@ -211,8 +202,20 @@ void Compute1DFilterKernel(EFilterType InFilterType, int32 InFilterSize, TArray<
 	check(OutWeights.Num() % 2 == 1);
 }
 
+const TCHAR* EFilterTypeToString(EFilterType InFilterType)
+{
+	const TCHAR* ConvertTable[] = {
+		TEXT("BoxFilter"),
+		TEXT("GaussianFilter")
+	};
+
+	return ConvertTable[int32(InFilterType)];
+}
+
 //A function that filters the RGB channels of InSourceTexture using ParallelFor.
-void FilterTexture(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTexture2D> OutFilteredTexture, EFilterType InFilterType, int32 InFilterSize, bool InVertical, bool InForceSingleThread)
+//Its done by separating the 2D operation to 2 1D operations(vertical and horizontal).
+//TextureWidth * TextureHeight * KernelSize * KernelSize ----> 2 * TextureWidth * TextureHeight * KernelSize
+void FilterTexture(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTexture2D> OutFilteredTexture, EFilterType InFilterType, int32 InFilterSize, bool InVerticalPass, bool InForceSingleThread)
 {
 	check(InSourceTexture.Get() && OutFilteredTexture.Get());
 	check(InSourceTexture->SRGB == OutFilteredTexture->SRGB);
@@ -255,14 +258,14 @@ void FilterTexture(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UT
 		{
 			FIntPoint SamplePosition;
 
-			if (InVertical)
+			if (InVerticalPass)
 			{
-				int32 ClampedSamplePositionY = FMath::Clamp(CurrentPixelPosY + Offsets[i], 0, TextureHeight);
+				int32 ClampedSamplePositionY = FMath::Clamp(CurrentPixelPosY + Offsets[i], 0, TextureHeight - 1);
 				SamplePosition = FIntPoint(CurrentPixelPosX, ClampedSamplePositionY);
 			}
 			else
 			{
-				int32 ClampedSamplePositionX = FMath::Clamp(CurrentPixelPosX + Offsets[i], 0, TextureWidth);
+				int32 ClampedSamplePositionX = FMath::Clamp(CurrentPixelPosX + Offsets[i], 0, TextureWidth - 1);
 				SamplePosition = FIntPoint(ClampedSamplePositionX, CurrentPixelPosY);
 			}
 
@@ -305,7 +308,7 @@ void FilterTexture(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UT
 	UE_LOG(LogMultiThreadingSample, Display, TEXT("%s(%s, %s, texture size: %dx%d, filter size: %d) execution finished in: %f seconds."),
 		EFilterTypeToString(InFilterType),
 		InForceSingleThread ? TEXT("singlethreaded") : TEXT("multithreaded"),
-		InVertical ? TEXT("vertical pass") : TEXT("horizontal pass"),
+		InVerticalPass ? TEXT("vertical pass") : TEXT("horizontal pass"),
 		TextureWidth, TextureHeight, InFilterSize,
 		EndTime - StartTime);
 
@@ -644,7 +647,7 @@ void UMultiThreadingSampleBPLibrary::FilterTextureUsingTaskSystem(UTexture2D* In
 class FMyTask
 {
 public:
-	FMyTask(float InValue): SomeVar(InValue)
+	FMyTask(float InValue) : SomeVar(InValue)
 	{
 	}
 
@@ -680,8 +683,8 @@ private:
 class FTextureFilterTask
 {
 public:
-	FTextureFilterTask(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTexture2D> InFilteredTexture, EFilterType InFilterType, int InFilterSize, bool InVertical)
-		:FilterType(InFilterType), FilterSize(InFilterSize), Vertival(InVertical), SourceTexture(InSourceTexture), FilteredTexture(InFilteredTexture)
+	FTextureFilterTask(TWeakObjectPtr<UTexture2D> InSourceTexture, TWeakObjectPtr<UTexture2D> InFilteredTexture, EFilterType InFilterType, int InFilterSize, bool InVerticalPass)
+		:FilterType(InFilterType), FilterSize(InFilterSize), VerticalPass(InVerticalPass), SourceTexture(InSourceTexture), FilteredTexture(InFilteredTexture)
 	{
 	}
 
@@ -702,13 +705,13 @@ public:
 
 	void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
 	{
-		FilterTexture(SourceTexture, FilteredTexture, FilterType, FilterSize, Vertival, false);
+		FilterTexture(SourceTexture, FilteredTexture, FilterType, FilterSize, VerticalPass, false);
 	}
 
 private:
 	EFilterType FilterType = EFilterType::BoxFilter;
 	int FilterSize = 3;
-	bool Vertival = false;
+	bool VerticalPass = false;
 
 	TWeakObjectPtr<UTexture2D> SourceTexture;
 	TWeakObjectPtr<UTexture2D> FilteredTexture;
@@ -994,6 +997,9 @@ void UMultiThreadingSampleBPLibrary::FilterTextureUsingPipe(UTexture2D* InSource
 	OutResult->SetResult(CompositeResult, MoveTemp(Pipe));
 }
 
+/*----------------------------------------------------------------------------------
+	Nested Task Sample
+----------------------------------------------------------------------------------*/
 //Notice that nested task is used to define the completion timeing of the outer task, not the execution order of outer task and nested task.
 //Its kinda like that the nested task is a prerequisite of the outer task but its really not that.
 //Nested task can execute concurrently with outer task, but a task can noly begin execute when all its prerequisites are completed.
@@ -1038,19 +1044,98 @@ void UMultiThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 
 	//Here we dont really care about the result, just wait with a timeout.
 	OuterTask.Wait(FTimespan::FromMilliseconds(100));
-	
+
 	//This can be true or false, depending on:
 	//1. Whether the nested tasks have completed or not.
 	//2. If all the nested tasks have completed, Whether the OuterTask itself has completed or not.
 	bool IsCompleted = OuterTask.IsCompleted();
 }
 
+/*----------------------------------------------------------------------------------
+	Low Level Task Sample
+----------------------------------------------------------------------------------*/
+void UMultiThreadingSampleBPLibrary::RunLowLevelTaskTest()
+{
+	int TestValue = 100;
+
+	UE_LOG(LogMultiThreadingSample, Display, TEXT("Begin Running Low Level Task Test. TestValue = %d"), TestValue);
+
+	//Create a low level task.
+	TSharedPtr<LowLevelTasks::FTask> Task = MakeShared<LowLevelTasks::FTask>();
+
+	//Initialize the low level task.
+	Task->Init(
+		TEXT("SimpleLowLevelTask"),
+		LowLevelTasks::ETaskPriority::Default,
+		[&]() {
+			TestValue = 1337;
+		},
+		LowLevelTasks::ETaskFlags::DefaultFlags
+	);
+
+	//Try to launch the task(the scheduler will handle this).
+	bool WasLaunched = LowLevelTasks::TryLaunch(*Task, LowLevelTasks::EQueuePreference::DefaultPreference, true/*bWakeUpWorker*/);
+
+	//Try to cancel the task.
+	bool WasCanceled = Task->TryCancel(LowLevelTasks::ECancellationFlags::DefaultFlags);
+
+	if (WasCanceled)
+	{
+		//Try to revive the task.
+		bool WasRevived = Task->TryRevive();
+
+		if (!WasRevived)
+		{
+			//Wait low level task system marks this task as completed.
+			while (!Task->IsCompleted())
+			{
+				FPlatformProcess::Sleep(0.005f);
+			}
+
+			check(Task->IsCompleted());
+			check(TestValue == 100); //TestValue is unchanged(we cancled this task and failed to revive it).
+		}
+		else
+		{
+			//We cancled this task and then succeed to revive it.
+			//Now we wait for the task to be completed.
+			while (!Task->IsCompleted())
+			{
+				FPlatformProcess::Sleep(0.005f);
+				//Try to expedite the task.
+				// bool WasExpedite = Task->TryExpedite();
+			}
+
+			check(Task->IsCompleted());
+			check(TestValue == 1337);
+		}
+	}
+	else
+	{
+		//Wait for the task to be completed.
+		while (!Task->IsCompleted())
+		{
+			FPlatformProcess::Sleep(0.005f);
+			//Try to expedite the task.
+			// bool WasExpedite = Task->TryExpedite();
+		}
+
+		check(Task->IsCompleted());
+		check(TestValue == 1337);
+	}
+
+	UE_LOG(LogMultiThreadingSample, Display, TEXT("End Running Low Level Task Test. TestValue = %d"), TestValue);
+}
+
+/*----------------------------------------------------------------------------------
+	FRunnable/FRunnableThread and FThread Samples
+----------------------------------------------------------------------------------*/
 void UMultiThreadingSampleBPLibrary::CreateRunnable(UMyRunnable*& OutMyRunnable)
 {
 	OutMyRunnable = NewObject<UMyRunnable>(GetTransientPackage());
 }
 
-void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingFThread()
+void UMultiThreadingSampleBPLibrary::DoThreadedWorkUsingFThread()
 {
 	//The threaded function that will be exectuted on other thread.
 	auto ThreadedFunction = []() {
@@ -1094,6 +1179,9 @@ void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingFThread()
 	Thread.Reset();
 }
 
+/*----------------------------------------------------------------------------------
+	Queued Thread Pool Samples
+----------------------------------------------------------------------------------*/
 //When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FDummyEmptyWork :public IQueuedWork
 {
@@ -1121,7 +1209,7 @@ public:
 
 	virtual const TCHAR* GetDebugName()const override
 	{
-		return nullptr;
+		return TEXT("DummyEmptyWork");
 	}
 };
 
@@ -1186,7 +1274,7 @@ public:
 
 	virtual const TCHAR* GetDebugName()const override
 	{
-		return DebugName;
+		return TEXT("OutputStringToLogTask");
 	}
 
 	FOutputStringToLogWork(const FString& InContent)
@@ -1195,12 +1283,8 @@ public:
 	}
 
 private:
-	static const TCHAR* DebugName;
-
 	FString Content;
 };
-
-const TCHAR* FOutputStringToLogWork::DebugName = TEXT("OutputStringToLogTask");
 
 //The above tasks can be done using FAutoDeleteAsyncTask(as they delete themselves when task is done).
 class FAutoDeleteOutputStringToLogTask :public FNonAbandonableTask
@@ -1227,8 +1311,8 @@ private:
 	FString Content;
 };
 
-template<class T>
-const TCHAR* BuildStringFromIntArray(T& InStringBuilder, const TArray<int32>& InArray)
+template<class BuilderType, class ArrayElementType>
+const TCHAR* BuildStringFromArray(BuilderType& InStringBuilder, const TArray<ArrayElementType>& InArray)
 {
 	InStringBuilder << "[";
 
@@ -1270,14 +1354,14 @@ private:
 
 		TStringBuilder<1024> StringBuilder;
 
-		FString Content = BuildStringFromIntArray(StringBuilder, ArrayToSort);
+		FString Content = BuildStringFromArray(StringBuilder, ArrayToSort);
 		UE_LOG(LogMultiThreadingSample, Display, TEXT("FSortIntArrayWork::Before sort: %s"), *Content);
 
 		Algo::Sort(ArrayToSort);
 
 		StringBuilder.Reset();
 
-		Content = BuildStringFromIntArray(StringBuilder, ArrayToSort);
+		Content = BuildStringFromArray(StringBuilder, ArrayToSort);
 		UE_LOG(LogMultiThreadingSample, Display, TEXT("FSortIntArrayWork::After sort: %s"), *Content);
 	}
 
@@ -1296,7 +1380,94 @@ public:
 	}
 };
 
-void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute)
+class FWorkWithWeight :public IQueuedWork
+{
+public:
+	FWorkWithWeight(float InWeight) :Weight(InWeight) {}
+
+	float GetWeight()const
+	{
+		return Weight;
+	}
+
+	virtual void DoThreadedWork()override
+	{
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("FWorkWithWeight::DoThreadedWork(). Weight is %f."), Weight);
+		delete this;
+	}
+
+	virtual void Abandon()override
+	{
+		//Do nothing
+	}
+
+	virtual EQueuedWorkFlags GetQueuedWorkFlags()const override
+	{
+		return EQueuedWorkFlags::None;
+	}
+
+	virtual int64 GetRequiredMemory()const override
+	{
+		return -1;
+	}
+
+	virtual const TCHAR* GetDebugName()const override
+	{
+		return nullptr;
+	}
+
+private:
+	float Weight = 0.0f;
+};
+
+FQueuedThreadPoolWrapper* GetQueuedThreadPoolWrapper()
+{
+	static FQueuedThreadPoolWrapper* GThreadPoolWrapper = nullptr;
+
+	if (GThreadPoolWrapper == nullptr)
+	{
+		FQueuedThreadPool* WrappedThreadPool = GThreadPool;
+#if WITH_EDITOR
+		WrappedThreadPool = GLargeThreadPool;
+#endif
+
+		check(WrappedThreadPool);
+
+		//The priority mapper. Here we just map the priority to EQueuedWorkPriority::Lowest.
+		auto PriorityMapper = [](EQueuedWorkPriority InPriority) {
+			return EQueuedWorkPriority::Lowest;
+			};
+
+		GThreadPoolWrapper = new FQueuedThreadPoolWrapper(WrappedThreadPool, 1/* InMaxConcurrency */, PriorityMapper);
+	}
+
+	return GThreadPoolWrapper;
+}
+
+FQueuedThreadPoolDynamicWrapper* GetQueuedThreadPoolDynamicWrapper()
+{
+	static FQueuedThreadPoolDynamicWrapper* GThreadPoolDynamicWrapper = nullptr;
+
+	if (GThreadPoolDynamicWrapper == nullptr)
+	{
+		FQueuedThreadPool* WrappedThreadPool = GThreadPool;
+#if WITH_EDITOR
+		WrappedThreadPool = GLargeThreadPool;
+#endif
+
+		check(WrappedThreadPool);
+
+		auto PriorityMapper = [](EQueuedWorkPriority InPriority) {
+			return EQueuedWorkPriority::Lowest;
+			};
+
+		GThreadPoolDynamicWrapper = new FQueuedThreadPoolDynamicWrapper(WrappedThreadPool, 1/* InMaxConcurrency */, PriorityMapper);
+	}
+
+	return GThreadPoolDynamicWrapper;
+}
+
+void UMultiThreadingSampleBPLibrary::DoThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute)
 {
 	FQueuedThreadPool* ThreadPool = GThreadPool;
 
@@ -1306,7 +1477,7 @@ void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool(cons
 
 	check(ThreadPool);
 
-	//Clamp incase deep recursive call / integer overflow
+	//Clamp incase deep recursive call / integer overflow / stack overflow
 	InFibonacciToCompute = FMath::Clamp(InFibonacciToCompute, 0, 45);
 
 	//Simply add work to the thread pool.
@@ -1328,7 +1499,7 @@ void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool(cons
 	if (SortArrayTask->IsDone()) //See if the task has completed.
 	{
 		UE_LOG(LogMultiThreadingSample, Display, TEXT("Sort array task has completed!"));
-	} 
+	}
 	else if (SortArrayTask->IsWorkDone()) //See if the work is done(But the task might not be completed).
 	{
 		UE_LOG(LogMultiThreadingSample, Display, TEXT("Sort array work is done!"));
@@ -1340,83 +1511,55 @@ void UMultiThreadingSampleBPLibrary::DoingThreadedWorkUsingQueuedThreadPool(cons
 	//Retrieve the result(and do something).
 	FSortIntArrayTask& UserTask = SortArrayTask->GetTask();
 	TStringBuilder<1024> StringBuilder;
-	FString RetrievedResult = BuildStringFromIntArray(StringBuilder, UserTask.GetArray());
-
+	FString RetrievedResult = BuildStringFromArray(StringBuilder, UserTask.GetArray());
 	UE_LOG(LogMultiThreadingSample, Display, TEXT("The retrieved sorted result: %s"), *RetrievedResult);
 
 	//Now the time to delete our task.
 	delete SortArrayTask;
-}
 
-void UMultiThreadingSampleBPLibrary::RunLowLevelTaskTest()
-{
-	int TestValue = 100;
-
-	UE_LOG(LogMultiThreadingSample, Display, TEXT("Begin Running Low Level Task Test. TestValue = %d"), TestValue);
-
-	//Create a low level task.
-	TSharedPtr<LowLevelTasks::FTask> Task = MakeShared<LowLevelTasks::FTask>();
-
-	//Initialize the low level task.
-	Task->Init(
-		TEXT("SimpleLowLevelTask"),
-		LowLevelTasks::ETaskPriority::Default,
-		[&]() {
-			TestValue = 1337;
-		},
-		LowLevelTasks::ETaskFlags::DefaultFlags
-	);
-
-	//Try to launch the task(the scheduler will handle this).
-	bool WasLaunched = LowLevelTasks::TryLaunch(*Task, LowLevelTasks::EQueuePreference::DefaultPreference, true/*bWakeUpWorker*/);
-
-	//Try to cancel the task.
-	bool WasCanceled = Task->TryCancel(LowLevelTasks::ECancellationFlags::DefaultFlags);
-
-	if (WasCanceled)
+	/*----------------------------------------------------------------------------------
+	Queued Thread Pool Wrapper Samples
+	----------------------------------------------------------------------------------*/
+	FQueuedThreadPoolWrapper* Wrapper = GetQueuedThreadPoolWrapper();
+	for (int i = 0; i < 10; ++i)
 	{
-		//Try to revive the task.
-		bool WasRevived = Task->TryRevive();
-		
-		if (!WasRevived)
-		{
-			//Wait low level task system marks this task as completed.
-			while (!Task->IsCompleted())
-			{
-				FPlatformProcess::Sleep(0.005f);
-			}
-
-			check(Task->IsCompleted());
-			check(TestValue == 100); //TestValue is unchanged(we cancled this task and failed to revive it).
-		}
-		else
-		{
-			//We cancled this task and then succeed to revive it.
-			//Now we wait for the task to be completed.
-			while (!Task->IsCompleted())
-			{
-				FPlatformProcess::Sleep(0.005f);
-				//Try to expedite the task.
-				// bool WasExpedite = Task->TryExpedite();
-			}
-
-			check(Task->IsCompleted());
-			check(TestValue == 1337);
-		}
-	}
-	else
-	{
-		//Wait for the task to be completed.
-		while (!Task->IsCompleted())
-		{
-			FPlatformProcess::Sleep(0.005f);
-			//Try to expedite the task.
-			// bool WasExpedite = Task->TryExpedite();
-		}
-
-		check(Task->IsCompleted());
-		check(TestValue == 1337);
+		//We added with EQueuedWorkPriority::Highest, but they will be mapped to other priority based on the provided priority mapper.
+		Wrapper->AddQueuedWork(new FFibonacciComputationWork(InFibonacciToCompute), EQueuedWorkPriority::Highest);
 	}
 
-	UE_LOG(LogMultiThreadingSample, Display, TEXT("End Running Low Level Task Test. TestValue = %d"), TestValue);
+	FQueuedThreadPoolDynamicWrapper* DynamicWrapper = GetQueuedThreadPoolDynamicWrapper();
+	//Initialize work weights and randomly shuffle works.
+	TArray<FWorkWithWeight*> Works;
+	for (int i = 0; i < 10; ++i)
+	{
+		Works.Add(new FWorkWithWeight(float(i)));
+	}
+	Algo::RandomShuffle(Works);
+
+	//Pause the thread pool wrapper so we can sort/reorder works before it gets executed and check the results in logs.
+	DynamicWrapper->Pause();
+
+	//Start queueing works to the thread pool wrapper.
+	for (int i = 0; i < Works.Num(); ++i)
+	{
+		DynamicWrapper->AddQueuedWork(Works[i]);
+	}
+
+	//The sort predicate which is based on the work weight.
+	//Theoretically you can do anything since you can get the work instance itself.
+	auto SortPredicate = [](const IQueuedWork* Lhs, const IQueuedWork* Rhs) {
+		const FWorkWithWeight* WorkA = (const FWorkWithWeight*)Lhs;
+		const FWorkWithWeight* WorkB = (const FWorkWithWeight*)Rhs;
+
+		float WeightA = WorkA->GetWeight();
+		float WeightB = WorkB->GetWeight();
+
+		return WeightA > WeightB;
+		};
+
+	//Do the sort operation.
+	DynamicWrapper->Sort(SortPredicate);
+
+	//Resume the thread pool wrapper.
+	DynamicWrapper->Resume();
 }

@@ -8,11 +8,7 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogMultiThreadingSample, All, All);
 
-/*----------------------------------------------------------------------------------
-	Async Interface Samples
-----------------------------------------------------------------------------------*/
-
-//Warp the return value of the Async function into an UObject to be able to use it in Blueprints.
+//Wrap the return value of the Async function into an UObject to be able to use it in Blueprints.
 UCLASS(BlueprintType)
 class UTextFileResult :public UObject
 {
@@ -57,7 +53,7 @@ enum class EAsyncLoadingExecution : uint8
 	AsyncThreadInterface       //AsyncThread()
 };
 
-//An Runnable class which impliments FRunnable and FSingleThreadRunnable
+//A Runnable class which impliments FRunnable and FSingleThreadRunnable
 class FMyRunnable :public FRunnable, public FSingleThreadRunnable
 {
 public:
@@ -183,7 +179,7 @@ enum class EFilterType : uint8
 	GaussianFilter
 };
 
-//Warp the result returned using task system
+//Wrap the result returned using task system
 UCLASS(BlueprintType)
 class UResultUsingTaskSystem :public UObject
 {
@@ -236,7 +232,7 @@ private:
 	UE::Tasks::FTask TaskHandle;
 };
 
-//Warp the result returned using task graph system
+//Wrap the result returned using task graph system
 UCLASS(BlueprintType)
 class UResultUsingTaskGraphSystem :public UObject
 {
@@ -283,7 +279,7 @@ private:
 	FGraphEventRef TaskEvent;
 };
 
-//Warp the result returned using pipe
+//Wrap the result returned using pipe
 UCLASS(BlueprintType)
 class UResultUsingPipe :public UObject
 {
@@ -363,14 +359,14 @@ class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunc
 	static void ExecuteNestedTask(int InCurrentCallIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
+	static void RunLowLevelTaskTest();
+
+	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
 	static void CreateRunnable(UMyRunnable*& OutMyRunnable);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void DoingThreadedWorkUsingFThread();
+	static void DoThreadedWorkUsingFThread();
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void DoingThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute);
-
-	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void RunLowLevelTaskTest();
+	static void DoThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute);
 };

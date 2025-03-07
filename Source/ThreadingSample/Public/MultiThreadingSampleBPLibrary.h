@@ -49,42 +49,46 @@ enum class EAsyncLoadingExecution : uint8
 	AsyncInterface_TaskGraph,  //EAsyncExecution::TaskGraph
 	AsyncInterface_ThreadPool, //EAsyncExecution::ThreadPool
 	AsyncInterface_Thread,     //EAsyncExecution::Thread
+	AsyncTaskInterface,        //AsyncTask()
 	AsyncPoolInterface,        //AsyncPool()
 	AsyncThreadInterface       //AsyncThread()
 };
 
-//A Runnable class which impliments FRunnable and FSingleThreadRunnable
+//A Runnable class that impliments FRunnable and FSingleThreadRunnable
 class FMyRunnable :public FRunnable, public FSingleThreadRunnable
 {
 public:
 	//Begin FRunnable
 	virtual bool Init() override
 	{
-		UE_LOG(LogMultiThreadingSample, Display, TEXT("Calling FMyRunnable::Init()."));
-		Stoped = false;
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::Initializing My Runnable."), FPlatformTLS::GetCurrentThreadId());
+		Stopped = false;
 		return true;
 	}
 
 	virtual uint32 Run() override
 	{
-		UE_LOG(LogMultiThreadingSample, Display, TEXT("Calling FMyRunnable::Run()."));
-		while (true && !Stoped)
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::Entering FMyRunnable::Run()."), FPlatformTLS::GetCurrentThreadId());
+		while (!Stopped)
 		{
-			ThreadWork();
+			ThreadedWork();
 		}
-
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::Exiting FMyRunnable::Run()."), FPlatformTLS::GetCurrentThreadId());
 		return 0;
 	}
 
 	virtual void Stop() override
 	{
-		UE_LOG(LogMultiThreadingSample, Display, TEXT("Calling FMyRunnable::Stop()."));
-		Stoped = true;
+		if (!Stopped)
+		{
+			UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::Stopping My Runnable."), FPlatformTLS::GetCurrentThreadId());
+			Stopped = true;
+		}
 	}
 
 	virtual void Exit() override
 	{
-		UE_LOG(LogMultiThreadingSample, Display, TEXT("Calling FMyRunnable::Exit()."));
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::Exiting My Runnable."), FPlatformTLS::GetCurrentThreadId());
 	}
 
 	//This returns a FSingleThreadRunnable pointer
@@ -98,7 +102,7 @@ public:
 	//Tick() will be called when multi threading is not supported on current platform or is disabled by commandline(-nothreading) or some other settings
 	virtual void Tick() override
 	{
-		ThreadWork();
+		ThreadedWork();
 	}
 	//End FSingleThreadRunnable
 
@@ -107,12 +111,14 @@ public:
 	virtual ~FMyRunnable() = default;
 
 private:
-	bool Stoped = false;
+	std::atomic_bool Stopped = false;
 
-	void ThreadWork()
+	FEventRef ResumeEvent{ FEventRef(EEventMode::AutoReset) };
+
+	void ThreadedWork()
 	{
-		UE_LOG(LogMultiThreadingSample, Display, TEXT("Doing threaded work..."));
-		FPlatformProcess::Sleep(0.1);
+		UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::FMyRunnable::Doing threaded work..."), FPlatformTLS::GetCurrentThreadId());
+		FPlatformProcess::Sleep(1.0);
 	}
 };
 
@@ -122,54 +128,111 @@ class UMyRunnable :public UObject
 	GENERATED_BODY()
 public:
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
-	bool Startup()
+	void Startup()
 	{
-		checkf(!IsRunning, TEXT("Startup() should only be called once!!!"));
+		if (bIsRunning)
+			return;
 
-		Runnable = new FMyRunnable;
+		bIsRunning = true;
+
+		Runnable.Reset(new FMyRunnable);
 		//Create the Runnable Thread baseed on which platform we are running on.
 		//eg. on Windows, This will eventually create a new FRunnableThreadWin instance.
-		RunnableThread = FRunnableThread::Create(Runnable, TEXT("My Runnable Thread"), 0, EThreadPriority::TPri_Lowest);
-
-		if (!RunnableThread)
-		{
-			UE_LOG(LogMultiThreadingSample, Warning, TEXT("Failed to create runnable thread."));
-			delete Runnable;
-			return false;
-		}
-
-		IsRunning = true;
-
-		return true;
+		RunnableThread.Reset(FRunnableThread::Create(Runnable.Get(), TEXT("My Runnable Thread"), 0, EThreadPriority::TPri_Lowest));
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
-	void Stop()
+	void Shutdown()
 	{
-		if (IsRunning)
+		if (bIsRunning)
 		{
 			Runnable->Stop();
 
-			//Delete the thread first.
-			delete RunnableThread;
-			RunnableThread = nullptr;
-			delete Runnable;
-			Runnable = nullptr;
+			RunnableThread.Reset();
+			Runnable.Reset();
 
-			IsRunning = false;
+			bIsRunning = false;
 		}
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	bool IsRunning()const
+	{
+		return bIsRunning;
 	}
 
 	virtual ~UMyRunnable()
 	{
-		Stop();
+		Shutdown();
 	}
 
 private:
-	FMyRunnable* Runnable;
-	FRunnableThread* RunnableThread;
+	TUniquePtr<FMyRunnable> Runnable;
+	TUniquePtr<FRunnableThread> RunnableThread;
 
-	bool IsRunning = false;
+	bool bIsRunning = false;
+};
+
+UCLASS(BlueprintType)
+class UMyFThread :public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	void Startup()
+	{
+		if (bIsRunning)
+			return;
+
+		bIsRunning = true;
+
+		//The threaded function that will be exectuted on other thread.
+		auto ThreadedFunction = [this]() {
+			while (this->bIsRunning)
+			{
+				UE_LOG(LogMultiThreadingSample, Display, TEXT("Running My FThread ThreadedFunction()."));
+				FPlatformProcess::Sleep(1.0);
+			}
+			};
+
+		Thread = MakeUnique<FThread>(
+			TEXT("My FThread"),//The debug name of this thread.
+			ThreadedFunction,
+			nullptr/* SingleThreadTickFunction */, //This function will be exectuted when multi-threading is not supported or disabled.
+			0,
+			EThreadPriority::TPri_Lowest//The thread priority of this thread.
+		);
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	void Shutdown()
+	{
+		if (bIsRunning)
+		{
+			bIsRunning = false;
+
+			//Join() must be called to wait for the FThread instance to finish execute.
+			Thread->Join();
+			Thread.Reset();
+		}
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	bool IsRunning()const
+	{
+		return bIsRunning;
+	}
+
+	virtual ~UMyFThread()
+	{
+		Shutdown();
+	}
+
+private:
+	TUniquePtr<FThread> Thread;
+
+	std::atomic_bool bIsRunning = false;
 };
 
 UENUM(BlueprintType)
@@ -362,11 +425,11 @@ class THREADINGSAMPLE_API UMultiThreadingSampleBPLibrary : public UBlueprintFunc
 	static void RunLowLevelTaskTest();
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void CreateRunnable(UMyRunnable*& OutMyRunnable);
+	static void CreateRunnable(UMyRunnable*& OutRunnable);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void DoThreadedWorkUsingFThread();
+	static void CreateFThread(UMyFThread*& OutFThread);
 
 	UFUNCTION(BlueprintCallable, Category = "MultiThreading Sample")
-	static void DoThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute);
+	static void DoThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute, int32 InNumWorksForWrapper);
 };

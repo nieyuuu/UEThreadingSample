@@ -438,11 +438,13 @@ bool ValidateParameters(UTexture2D* InSourceTexture, int InFilterSize, float InS
 		return false;
 	}
 
+#if WITH_EDITORONLY_DATA
 	if (InSourceTexture->MipGenSettings != TextureMipGenSettings::TMGS_NoMipmaps)
 	{
 		UE_LOG(LogMultiThreadingSample, Warning, TEXT("Currently only support texture with mipmap generation setting [TMGS_NoMipmaps]."));
 		return false;
 	}
+#endif
 
 	FTexture2DMipMap* SourceMip = &InSourceTexture->GetPlatformData()->Mips[0];
 	const uint16 TextureWidth = SourceMip->SizeX;
@@ -1018,20 +1020,9 @@ void UMultiThreadingSampleBPLibrary::FilterTextureUsingPipe(UTexture2D* InSource
 //Nested task can execute concurrently with outer task, but a task can noly begin execute when all its prerequisites are completed.
 void UMultiThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 {
-	auto AnotherNestedTask = UE::Tasks::Launch(
-		UE_SOURCE_LOCATION,
-		[=]()
-		{
-			UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing another nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
-			FPlatformProcess::Sleep(0.4);
-		},
-		UE::Tasks::ETaskPriority::BackgroundLow,
-		UE::Tasks::EExtendedTaskPriority::None
-	);
-
 	auto OuterTask = UE::Tasks::Launch(
 		UE_SOURCE_LOCATION,
-		[&]()
+		[=]()
 		{
 			//We are lauching inside a task.
 			auto NestedTask = UE::Tasks::Launch(
@@ -1040,6 +1031,17 @@ void UMultiThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 				{
 					UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
 					FPlatformProcess::Sleep(0.3);
+				},
+				UE::Tasks::ETaskPriority::BackgroundLow,
+				UE::Tasks::EExtendedTaskPriority::None
+			);
+
+			auto AnotherNestedTask = UE::Tasks::Launch(
+				UE_SOURCE_LOCATION,
+				[=]()
+				{
+					UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing another nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
+					FPlatformProcess::Sleep(0.4);
 				},
 				UE::Tasks::ETaskPriority::BackgroundLow,
 				UE::Tasks::EExtendedTaskPriority::None
@@ -1056,7 +1058,7 @@ void UMultiThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 	);
 
 	//Here we dont really care about the result, just wait with a timeout.
-	OuterTask.Wait(FTimespan::FromMilliseconds(100));
+	//OuterTask.Wait(FTimespan::FromMilliseconds(100));
 
 	//This can be true or false, depending on:
 	//1. Whether the nested tasks have completed or not.

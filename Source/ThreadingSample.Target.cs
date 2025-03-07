@@ -3,11 +3,11 @@ using System.Collections.Generic;
 
 public class ThreadingSampleTarget : TargetRules
 {
-	public ThreadingSampleTarget(TargetInfo Target) : base(Target)
-	{
-		Type = TargetType.Game;
-		DefaultBuildSettings = BuildSettingsVersion.V5;
-		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_5;
-		ExtraModuleNames.Add("ThreadingSample");
-	}
+    public ThreadingSampleTarget(TargetInfo Target) : base(Target)
+    {
+        Type = TargetType.Game;
+        DefaultBuildSettings = BuildSettingsVersion.V5;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_5;
+        ExtraModuleNames.Add("ThreadingSample");
+    }
 }

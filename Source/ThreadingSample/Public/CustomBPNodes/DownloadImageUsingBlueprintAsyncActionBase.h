@@ -8,7 +8,7 @@
 
 class UTexture2DDynamic;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FDownloadImageDelegate1, UTexture2DDynamic*, Texture, int32, SizeX, int32, SizeY);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FDownloadImageDelegate, UTexture2DDynamic*, Texture, int32, SizeX, int32, SizeY);
 
 UCLASS()
 class UAsyncDownloadImage : public UBlueprintAsyncActionBase
@@ -21,10 +21,10 @@ public:
 
 public:
 	UPROPERTY(BlueprintAssignable)
-	FDownloadImageDelegate1 OnSuccess;
+	FDownloadImageDelegate OnSuccess;
 
 	UPROPERTY(BlueprintAssignable)
-	FDownloadImageDelegate1 OnFailure;
+	FDownloadImageDelegate OnFailure;
 
 	void Start(const FString& InURL);
 

@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Tasks/TaskConcurrencyLimiter.h"
+#include "Misc/QueuedThreadPoolWrapper.h"
 
 void CodeSnippets()
 {
@@ -185,5 +186,102 @@ void CodeSnippets()
 		//Get the return value of task body. It will block the caller if task is not completed.
 		Task.Wait();
 		int& Result = Task.GetResult();
+	}
+
+	//Task Graph Interfaces
+	{
+		FTaskGraphInterface& Instance = FTaskGraphInterface::Get();
+
+		ENamedThreads::Type CurrentThread = Instance.GetCurrentThreadIfKnown(false/* bLocalQueue */);
+		int32 NumBackgroundThreads = Instance.GetNumBackgroundThreads();
+		int32 NumForegroundThreads = Instance.GetNumForegroundThreads();
+		int32 NumNumWorkerThreads = Instance.GetNumWorkerThreads();
+		bool IsCurrentThreadKnown = Instance.IsCurrentThreadKnown();
+		bool IsRunning = Instance.IsRunning();
+		bool IsGameThreadProcessingTasks = Instance.IsThreadProcessingTasks(ENamedThreads::GameThread);
+	}
+
+	//Task graph process named thread
+	{
+		//Supposing we are in game thread and we dispatched a game thread task.
+		auto GameThreadTask = FFunctionGraphTask::CreateAndDispatchWhenReady(
+			[]() {},
+			TStatId{},
+			nullptr,
+			ENamedThreads::GameThread
+		);
+
+		//process game thread tasks until idle.
+		{
+			FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
+		}
+
+		//Process game thread tasks until RequestReturn is called.
+		{
+			FTaskGraphInterface::Get().ProcessThreadUntilRequestReturn(ENamedThreads::GameThread);
+
+			//Launch another task use Task System
+			auto RequestReturnTask = Launch(
+				UE_SOURCE_LOCATION,
+				[]()
+				{
+					//The task body is to request game thread to stop process tasks and return.
+					FTaskGraphInterface::Get().RequestReturn(ENamedThreads::GameThread);
+				},
+				Prerequisites(GameThreadTask), //Take GameThreadTask as its prerequisite
+				LowLevelTasks::ETaskPriority::High,
+				EExtendedTaskPriority::GameThreadNormalPri //Executed on game thread
+			);
+
+			//Or dispatch another task use Task Graph System
+			FGraphEventArray Prerequisites{ GameThreadTask };
+			TGraphTask<FReturnGraphTask>::CreateTask(&Prerequisites).ConstructAndDispatchWhenReady(ENamedThreads::GameThread);
+		}
+
+		//Wait here will not deadlock
+		//1. If we process thread until idle.
+		//2. Or if we procee thread until explicitly request return.
+		//3. Even if we dont perform the above operations, Wait() itself will help with that.
+		GameThreadTask->Wait();
+	}
+
+	//Queued thread pool wrapper
+	{
+		struct DummyWork :public IQueuedWork
+		{
+			virtual void DoThreadedWork()override
+			{
+				delete this;
+			}
+
+			virtual void Abandon()override
+			{
+
+			}
+		};
+
+		//Task Graph System wrapper
+		{
+			auto PriorityMapper = [](EQueuedWorkPriority InPriority) -> ENamedThreads::Type
+				{
+					return ENamedThreads::AnyBackgroundThreadNormalTask;
+				};
+
+			TUniquePtr<FQueuedThreadPoolTaskGraphWrapper> TaskGraphWrapper = MakeUnique<FQueuedThreadPoolTaskGraphWrapper>(PriorityMapper);
+			((FQueuedThreadPool*)TaskGraphWrapper.Get())->AddQueuedWork(new DummyWork);
+		}
+
+		//Low Level Task System wrapper
+		{
+			auto PriorityMapper = [](EQueuedWorkPriority InPriority) -> EQueuedWorkPriority
+				{
+					return InPriority;
+				};
+
+			auto LowLevelTaskScheduler = &LowLevelTasks::FScheduler::Get();
+
+			TUniquePtr<FQueuedLowLevelThreadPool> LowLevelTaskWrapper = MakeUnique<FQueuedLowLevelThreadPool>(PriorityMapper, LowLevelTaskScheduler);
+			((FQueuedThreadPool*)LowLevelTaskWrapper.Get())->AddQueuedWork(new DummyWork);
+		}
 	}
 }

@@ -31,11 +31,6 @@ FString LoadTextFileToString(const FString& InFileName, float InSleepTimeInSecon
 	}
 }
 
-void LoadTextFileToString(const FString& InFileName, TPromise<FString>&& OutPromise, float InSleepTimeInSeconds = 0.0f)
-{
-	OutPromise.SetValue(LoadTextFileToString(InFileName, InSleepTimeInSeconds));
-}
-
 auto LaunchAsyncLoadingTextFile_AsyncInterface(const FString& InFileName, EAsyncExecution Execution, float InSleepTimeInSeconds = 0.0f)
 {
 	auto Result = NewObject<UTextFileResult>();
@@ -84,8 +79,8 @@ auto LaunchAsyncLoadingTextFile_AsyncTaskInterface(const FString& InFileName, fl
 	AsyncTask(
 		ENamedThreads::AnyThread,
 		[LocalPromise = MoveTemp(Promise), &InFileName, InSleepTimeInSeconds]() {
-			TPromise<FString>* MutablePtr = const_cast<TPromise<FString>*>(&LocalPromise);
-			LoadTextFileToString(InFileName, MoveTemp(*MutablePtr), InSleepTimeInSeconds);
+			TPromise<FString>& MutablePromise = const_cast<TPromise<FString>&>(LocalPromise);
+			MutablePromise.SetValue(LoadTextFileToString(InFileName, InSleepTimeInSeconds));
 		}
 	);
 

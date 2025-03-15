@@ -113,8 +113,6 @@ public:
 private:
 	std::atomic_bool Stopped = false;
 
-	FEventRef ResumeEvent{ FEventRef(EEventMode::AutoReset) };
-
 	void ThreadedWork()
 	{
 		UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::FMyRunnable::Doing threaded work..."), FPlatformTLS::GetCurrentThreadId());
@@ -142,16 +140,28 @@ public:
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
-	void Shutdown()
+	void Shutdown(bool InAsyncShutDown)
 	{
 		if (bIsRunning)
 		{
-			Runnable->Stop();
+			auto Reset = [this]() {
+				Runnable->Stop();
 
-			RunnableThread.Reset();
-			Runnable.Reset();
+				RunnableThread.Reset();
+				Runnable.Reset();
 
-			bIsRunning = false;
+				bIsRunning = false;
+				};
+
+			if (InAsyncShutDown)
+			{
+				//We destroy runnable and runnable thread in a worker thread.
+				AsyncTask(ENamedThreads::AnyThread, MoveTemp(Reset));
+			}
+			else
+			{
+				Reset();
+			}
 		}
 	}
 
@@ -163,7 +173,7 @@ public:
 
 	virtual ~UMyRunnable()
 	{
-		Shutdown();
+		Shutdown(true);
 	}
 
 private:
@@ -206,15 +216,27 @@ public:
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
-	void Shutdown()
+	void Shutdown(bool InAsyncShutDown)
 	{
-		if (bIsRunning)
-		{
+		auto Reset = [this]() {
 			bIsRunning = false;
 
 			//Join() must be called to wait for the FThread instance to finish execute.
 			Thread->Join();
 			Thread.Reset();
+			};
+
+		if (bIsRunning)
+		{
+			if (InAsyncShutDown)
+			{
+				//We wait for the created thread to join in a worker thread.
+				AsyncTask(ENamedThreads::AnyThread, MoveTemp(Reset));
+			}
+			else
+			{
+				Reset();
+			}
 		}
 	}
 
@@ -226,7 +248,7 @@ public:
 
 	virtual ~UMyFThread()
 	{
-		Shutdown();
+		Shutdown(true);
 	}
 
 private:

@@ -1,6 +1,12 @@
 #include "CoreMinimal.h"
 #include "Tasks/TaskConcurrencyLimiter.h"
 #include "Misc/QueuedThreadPoolWrapper.h"
+#include "Misc/ScopeLock.h"
+#include "Misc/SpinLock.h"
+#include "Async/Mutex.h"
+#include "Async/RecursiveMutex.h"
+
+static thread_local int ThreadLocalVariable = -1;
 
 void CodeSnippets()
 {
@@ -9,41 +15,39 @@ void CodeSnippets()
 
 	//Wait task to be completed
 	{
-		auto TaskA = Launch(
+		//A collection of tasks with different result types
+		TArray<UE::Tasks::FTask> Tasks = {
+			Launch(
 			UE_SOURCE_LOCATION,
 			[]() {},
 			ETaskPriority::Normal,
 			EExtendedTaskPriority::None
-		);
-		auto TaskB = Launch(
+		),
+			Launch(
 			UE_SOURCE_LOCATION,
-			[]() {},
+			[]() { return 10.0f; },
 			ETaskPriority::Normal,
 			EExtendedTaskPriority::None
-		);
-		auto TaskC = Launch(
+		),
+			Launch(
 			UE_SOURCE_LOCATION,
-			[]() {},
+			[]() { return 100; },
 			ETaskPriority::Normal,
 			EExtendedTaskPriority::None
-		);
+		)
+		};
 
 		//Wait for single task
-		TaskA.Wait(FTimespan::FromMicroseconds(100));
-		TaskA.Wait();
+		Tasks[0].Wait(FTimespan::FromMicroseconds(100));
+		Tasks[0].Wait();
 
 		//Wait for a collection of tasks
-		TArray<UE::Tasks::FTask> Tasks;
-		Tasks.Add(TaskA);
-		Tasks.Add(TaskB);
-		Tasks.Add(TaskC);
-
 		Wait(Tasks, FTimespan::FromMicroseconds(100));
 
 		//Wait for any of the tasks
 		int32 FirstCompletedIndex = WaitAny(Tasks, FTimespan::FromMicroseconds(100));
-		auto WaitTask = Any(TArray({ TaskA,TaskB,TaskC }));
-		WaitTask.Wait();
+		auto WaitAnyTask = Any(Tasks);
+		WaitAnyTask.Wait();
 	}
 
 	//Task cancellation token
@@ -211,15 +215,13 @@ void CodeSnippets()
 			ENamedThreads::GameThread
 		);
 
-		//process game thread tasks until idle.
+		//Process game thread tasks until idle.
 		{
 			FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
 		}
 
 		//Process game thread tasks until RequestReturn is called.
 		{
-			FTaskGraphInterface::Get().ProcessThreadUntilRequestReturn(ENamedThreads::GameThread);
-
 			//Launch another task use Task System
 			auto RequestReturnTask = Launch(
 				UE_SOURCE_LOCATION,
@@ -236,6 +238,9 @@ void CodeSnippets()
 			//Or dispatch another task use Task Graph System
 			FGraphEventArray Prerequisites{ GameThreadTask };
 			TGraphTask<FReturnGraphTask>::CreateTask(&Prerequisites).ConstructAndDispatchWhenReady(ENamedThreads::GameThread);
+
+			//Process game thread tasks until return is requested
+			FTaskGraphInterface::Get().ProcessThreadUntilRequestReturn(ENamedThreads::GameThread);
 		}
 
 		//Wait here will not deadlock
@@ -243,6 +248,14 @@ void CodeSnippets()
 		//2. Or if we procee thread until explicitly request return.
 		//3. Even if we dont perform the above operations, Wait() itself will help with that.
 		GameThreadTask->Wait();
+	}
+
+	//Create task graph event
+	{
+		FGraphEventRef Event = FBaseGraphTask::CreateGraphEvent();
+
+		//Trigger a task graph event(not an elegant way)
+		Event->TryLaunch(0);
 	}
 
 	//Queued thread pool wrapper
@@ -282,6 +295,290 @@ void CodeSnippets()
 
 			TUniquePtr<FQueuedLowLevelThreadPool> LowLevelTaskWrapper = MakeUnique<FQueuedLowLevelThreadPool>(PriorityMapper, LowLevelTaskScheduler);
 			((FQueuedThreadPool*)LowLevelTaskWrapper.Get())->AddQueuedWork(new DummyWork);
+		}
+	}
+
+	//Promise and Future
+	{
+		TPromise<float> Promise;
+		TFuture<float> Future = Promise.GetFuture();
+		check(Future.IsValid());
+
+		//These will invalidate the future
+		{
+			//Then
+			// TFuture<void> FutureChain = Future.Then([](TFuture<float> Self) {});
+			// check(!Future.IsValid());
+			//Next
+			// TFuture<void> FutureChain = Future.Next([](float Self) {});
+			// check(!Future.IsValid());
+		}
+
+		AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [&Promise]() {
+			Promise.SetValue(1.0);
+			}
+		);
+
+		bool IsReady = Future.IsReady();
+		Future.Wait();
+		Future.WaitFor(FTimespan::MaxValue());
+		Future.WaitUntil(FDateTime::MaxValue());
+
+		const float& ResultRef = Future.Get();
+		float& MutableResultRef = Future.GetMutable();
+
+		//This will invalidate the future
+		float Result = Future.Consume();
+		check(!Future.IsValid());
+	}
+
+	//Mutex
+	{
+		{
+			int SharedResource = 0;
+			UE::FMutex Mutex;
+			if (!Mutex.IsLocked())
+			{
+				//Try lock will not block the caller thread if not succeed
+				bool Succeed = Mutex.TryLock();
+				if (Succeed)
+				{
+					SharedResource++;
+					Mutex.Unlock();
+				}
+			}
+			if (!Mutex.IsLocked())
+			{
+				//Lock will block caller thread until it locker the mutex(deadlock might happen)
+				Mutex.Lock();
+				//Dont recursively lock!!!
+				//Mutex.Lock();
+				SharedResource++;
+				Mutex.Unlock();
+			}
+		}
+
+		{
+			int SharedResource = 0;
+			UE::FRecursiveMutex Mutex;
+			{
+				//Try lock will not block the caller thread if not succeed
+				bool Succeed = Mutex.TryLock();
+				if (Succeed)
+				{
+					SharedResource++;
+					Mutex.Unlock();
+				}
+			}
+			{
+				//Lock will block caller thread until it locker the mutex(deadlock might happen)
+				Mutex.Lock();
+				//Recursively lock is supported
+				Mutex.Lock();
+				SharedResource++;
+				Mutex.Unlock();
+			}
+		}
+
+		{
+			//A mutex that is constructed in locked state
+			UE::FMutex MutexConstructedInLockedState(UE::AcquireLock);
+			bool IsLocked = MutexConstructedInLockedState.IsLocked();
+		}
+	}
+
+	//Critical Section
+	{
+		{
+			int SharedResource = 0;
+			FCriticalSection CS;
+			{
+				//Try lock will not block the caller thread if not succeed
+				bool Succeed = CS.TryLock();
+				if (Succeed)
+				{
+					SharedResource++;
+					CS.Unlock();
+				}
+			}
+			{
+				//Lock will block caller thread until it locks the mutex(deadlock might happen)
+				CS.Lock();
+				//recursively lock a CS is ok on Windows. Not sure on other platforms(IOS/Android/Linux/...)
+				CS.Lock();
+				SharedResource++;
+				CS.Unlock();
+			}
+		}
+	}
+
+	//FSpinLock
+	{
+		int SharedResource = 0;
+		UE::FSpinLock Lock;
+
+		//Try lock
+		bool Succeed = Lock.TryLock();
+		if (Succeed)
+		{
+			SharedResource++;
+			Lock.Unlock();
+		}
+
+		//Lock a spin lock will not block the caller thread if anther thread owns the spin lock
+		//Instead it will repeatedly tries to aquire the lock until succeed(waste CPU resource)
+		//Should be used only for very short locks!!!
+		Lock.Lock();
+		SharedResource++;
+		Lock.Unlock();
+	}
+
+	//TScopeLock and TScopeUnlock(RAII)
+	{
+		int SharedResource = 0;
+		FCriticalSection CS;//Can also be a mutex type
+		{
+			//Within this scope the mutex remains locked and will unlock when goes out of this scope
+			UE::TScopeLock Lock(CS);
+			SharedResource++;
+		}
+
+		CS.Lock();
+		{
+			//Within this scope the mutex remains unlocked and will lock when goes out of this scope
+			UE::TScopeUnlock Unlock(CS);
+		}
+		CS.Unlock();
+	}
+
+	//TUniqueLock(RAII)
+	{
+		int SharedResource = 0;
+		UE::FMutex Mutex;
+		{
+			//Lock in constructor and unlock in destructor
+			auto Lock = UE::TUniqueLock(Mutex);
+			SharedResource++;
+		}
+	}
+
+	//TDynamicUniqueLock(RAII)
+	{
+		int SharedResource = 0;
+		UE::FMutex Mutex;
+		{
+			//Lock in constructor and unlock in destructor if locked
+			//With the ability to dynamically lock and unlock the mutex type
+			auto DynamicLock = UE::TDynamicUniqueLock(Mutex);
+			SharedResource++;
+			DynamicLock.Unlock();
+			DynamicLock.Lock();
+			SharedResource++;
+		}
+		{
+			//Deferred lock(no lock in constructor)
+			auto DynamicLock = UE::TDynamicUniqueLock(Mutex, UE::DeferLock);
+			DynamicLock.Lock();
+			SharedResource++;
+			DynamicLock.Unlock();
+			DynamicLock.Lock();
+			SharedResource++;
+		}
+	}
+
+	//FRWLock
+	{
+		int SharedResource = 0;
+		FRWLock Lock;
+		{
+			FReadScopeLock ReadScope(Lock);
+			int CurrentValue = SharedResource;
+		}
+		{
+			FWriteScopeLock WriteScope(Lock);
+			SharedResource++;
+		}
+		{
+			FRWScopeLock ScopeLock(Lock, SLT_ReadOnly);
+			int CurrentValue = SharedResource;
+		}
+		{
+			FRWScopeLock ScopeLock(Lock, SLT_Write);
+			SharedResource++;
+		}
+	}
+
+	//FEvent
+	{
+		{
+			FEvent* Event = FPlatformProcess::GetSynchEventFromPool(false /* bIsManualReset */);
+
+			Event->Trigger();
+			Event->Wait();
+			Event->Trigger();
+			Event->Wait(FTimespan::FromMilliseconds(10), false /* bIgnoreThreadIdleStats */);
+			Event->Trigger();
+			Event->Wait(10, false /* bIgnoreThreadIdleStats */);
+
+			//Return this event to event pool
+			FPlatformProcess::ReturnSynchEventToPool(Event);
+		}
+		{
+			FEvent* Event = FPlatformProcess::GetSynchEventFromPool(true /* bIsManualReset */);
+
+			Event->Trigger();
+
+			//Other thread may wait for this event to be triggered
+			Event->Wait();
+			Event->Wait(FTimespan::FromMilliseconds(10), false /* bIgnoreThreadIdleStats */);
+			Event->Wait(10, false /* bIgnoreThreadIdleStats */);
+
+			//Manually reset the event
+			Event->Reset();
+
+			//Return this event to event pool
+			FPlatformProcess::ReturnSynchEventToPool(Event);
+		}
+	}
+
+	//FEventRef(RAII)
+	{
+		{
+			FEventRef Event{ EEventMode::AutoReset };
+
+			Event->Trigger();
+			Event->Wait();
+			Event->Trigger();
+			Event->Wait(FTimespan::FromMilliseconds(10), false /* bIgnoreThreadIdleStats */);
+			Event->Trigger();
+			Event->Wait(10, false /* bIgnoreThreadIdleStats */);
+		}
+		{
+			FEventRef Event{ EEventMode::ManualReset };
+
+			Event->Trigger();
+
+			//Other thread may wait for this event to be triggered
+			Event->Wait();
+			Event->Wait(FTimespan::FromMilliseconds(10), false /* bIgnoreThreadIdleStats */);
+			Event->Wait(10, false /* bIgnoreThreadIdleStats */);
+
+			//Manually reset the event
+			Event->Reset();
+		}
+	}
+
+	//thread_local keyword
+	{
+		for (int i = 0; i < 5; ++i)
+		{
+			Async(EAsyncExecution::Thread,
+				[=]()
+				{
+					//For every thread, there will be an independent instance of ThreadLocalVariable.
+					ThreadLocalVariable = i;
+				}
+			);
 		}
 	}
 }

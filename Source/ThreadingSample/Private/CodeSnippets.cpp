@@ -124,7 +124,7 @@ void CodeSnippets()
 			EExtendedTaskPriority::None
 		);
 
-		//The task will not be executed until we trigger(signal) the evnet
+		//The task will not be executed until we trigger(signal) the event
 		Event.Trigger();
 	}
 

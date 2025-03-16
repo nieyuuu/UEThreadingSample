@@ -18,7 +18,7 @@ public:
 	bool IsReady() const
 	{
 		check(Future.IsValid());
-		//Retures whether the Future is ready or not.
+		//Returns whether the Future is ready or not.
 		return Future.IsReady();
 	}
 
@@ -54,7 +54,7 @@ enum class EAsyncLoadingExecution : uint8
 	AsyncThreadInterface       //AsyncThread()
 };
 
-//A Runnable class that impliments FRunnable and FSingleThreadRunnable
+//A Runnable class that implements FRunnable and FSingleThreadRunnable
 class FMyRunnable :public FRunnable, public FSingleThreadRunnable
 {
 public:
@@ -134,7 +134,7 @@ public:
 		bIsRunning = true;
 
 		Runnable.Reset(new FMyRunnable);
-		//Create the Runnable Thread baseed on which platform we are running on.
+		//Create the Runnable Thread based on which platform we are running on.
 		//eg. on Windows, This will eventually create a new FRunnableThreadWin instance.
 		RunnableThread.Reset(FRunnableThread::Create(Runnable.Get(), TEXT("My Runnable Thread"), 0, EThreadPriority::TPri_Lowest));
 	}
@@ -144,24 +144,27 @@ public:
 	{
 		if (bIsRunning)
 		{
-			auto Reset = [this]() {
-				Runnable->Stop();
-
-				RunnableThread.Reset();
-				Runnable.Reset();
-
-				bIsRunning = false;
-				};
+			Runnable->Stop();
 
 			if (InAsyncShutDown)
 			{
+				auto ShutdownTask = [LocalThread = RunnableThread.Release(), LocalRunnable = Runnable.Release()]() {
+					LocalThread->WaitForCompletion();
+					delete LocalThread;
+					delete LocalRunnable;
+					};
+
 				//We destroy runnable and runnable thread in a worker thread.
-				AsyncTask(ENamedThreads::AnyThread, MoveTemp(Reset));
+				AsyncTask(ENamedThreads::AnyThread, MoveTemp(ShutdownTask));
 			}
 			else
 			{
-				Reset();
+				RunnableThread->WaitForCompletion();
+				RunnableThread.Reset();
+				Runnable.Reset();
 			}
+
+			bIsRunning = false;
 		}
 	}
 
@@ -183,6 +186,45 @@ private:
 	bool bIsRunning = false;
 };
 
+class FMyThread
+{
+public:
+	FMyThread()
+	{
+		bIsRunning = true;
+
+		auto ThreadedFunction = [this]() {
+			while (bIsRunning)
+			{
+				UE_LOG(LogMultiThreadingSample, Display, TEXT("CurrentThreadID:%d::Running FThread ThreadedFunction()."), FPlatformTLS::GetCurrentThreadId());
+				FPlatformProcess::Sleep(1.0);
+			}
+			};
+
+		Thread = MakeUnique<FThread>(
+			TEXT("My FThread"),//The debug name of this thread.
+			ThreadedFunction,
+			nullptr/* SingleThreadTickFunction */, //This function will be executed when multi-threading is not supported or disabled.
+			0,
+			EThreadPriority::TPri_Lowest//The thread priority of this thread.
+		);
+	}
+
+	virtual ~FMyThread()
+	{
+		bIsRunning = false;
+
+		//Join() must be called to wait for the FThread instance to finish execute.
+		Thread->Join();
+		Thread.Reset();
+	}
+
+private:
+	TUniquePtr<FThread> Thread;
+
+	std::atomic_bool bIsRunning = false;
+};
+
 UCLASS(BlueprintType)
 class UMyFThread :public UObject
 {
@@ -197,46 +239,28 @@ public:
 
 		bIsRunning = true;
 
-		//The threaded function that will be exectuted on other thread.
-		auto ThreadedFunction = [this]() {
-			while (this->bIsRunning)
-			{
-				UE_LOG(LogMultiThreadingSample, Display, TEXT("Running My FThread ThreadedFunction()."));
-				FPlatformProcess::Sleep(1.0);
-			}
-			};
-
-		Thread = MakeUnique<FThread>(
-			TEXT("My FThread"),//The debug name of this thread.
-			ThreadedFunction,
-			nullptr/* SingleThreadTickFunction */, //This function will be exectuted when multi-threading is not supported or disabled.
-			0,
-			EThreadPriority::TPri_Lowest//The thread priority of this thread.
-		);
+		Thread = MakeUnique<FMyThread>();
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
 	void Shutdown(bool InAsyncShutDown)
 	{
-		auto Reset = [this]() {
-			bIsRunning = false;
-
-			//Join() must be called to wait for the FThread instance to finish execute.
-			Thread->Join();
-			Thread.Reset();
-			};
-
 		if (bIsRunning)
 		{
 			if (InAsyncShutDown)
 			{
-				//We wait for the created thread to join in a worker thread.
-				AsyncTask(ENamedThreads::AnyThread, MoveTemp(Reset));
+				auto ShutdownTask = [LocalThread = Thread.Release()]() {
+					delete LocalThread;
+					};
+
+				AsyncTask(ENamedThreads::AnyThread, MoveTemp(ShutdownTask));
 			}
 			else
 			{
-				Reset();
+				Thread.Reset();
 			}
+
+			bIsRunning = false;
 		}
 	}
 
@@ -252,9 +276,9 @@ public:
 	}
 
 private:
-	TUniquePtr<FThread> Thread;
+	TUniquePtr<FMyThread> Thread;
 
-	std::atomic_bool bIsRunning = false;
+	bool bIsRunning = false;
 };
 
 UENUM(BlueprintType)

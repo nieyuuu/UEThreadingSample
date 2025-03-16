@@ -804,8 +804,8 @@ void UMultiThreadingSampleBPLibrary::FilterTextureUsingTaskGraphSystem(UTexture2
 	UTexture2D* ScaleAlphaChannelResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaChannelResult"));
 	UTexture2D* CompositeResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("CompositeResult"));
 
-	//Construnt and hold or construct and dispatch when ready.
-	//If construct and hold, the task will not start execute until we explicitly unlock it(And of cource its subsequents will not execute).
+	//Construct and hold or construct and dispatch when ready.
+	//If construct and hold, the task will not start execute until we explicitly unlock it(And of course its subsequents will not execute).
 	auto VerticalPassTask = InHoldSourceTasks ?
 		TGraphTask<FTextureFilterTask>::CreateTask(
 			nullptr, ENamedThreads::GameThread).ConstructAndHold(
@@ -1012,7 +1012,7 @@ void UMultiThreadingSampleBPLibrary::FilterTextureUsingPipe(UTexture2D* InSource
 ----------------------------------------------------------------------------------*/
 //Notice that nested task is used to define the completion timeing of the outer task, not the execution order of outer task and nested task.
 //Its kinda like that the nested task is a prerequisite of the outer task but its really not that.
-//Nested task can execute concurrently with outer task, but a task can noly begin execute when all its prerequisites are completed.
+//Nested task can execute concurrently with outer task, but a task can only begin execute when all its prerequisites are completed.
 void UMultiThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 {
 	auto OuterTask = UE::Tasks::Launch(
@@ -1103,11 +1103,11 @@ void UMultiThreadingSampleBPLibrary::RunLowLevelTaskTest()
 			}
 
 			check(Task->IsCompleted());
-			check(TestValue == 100); //TestValue is unchanged(we cancled this task and failed to revive it).
+			check(TestValue == 100); //TestValue is unchanged(we canceled this task and failed to revive it).
 		}
 		else
 		{
-			//We cancled this task and then succeed to revive it.
+			//We canceled this task and then succeed to revive it.
 			//Now we wait for the task to be completed.
 			while (!Task->IsCompleted())
 			{
@@ -1153,7 +1153,7 @@ void UMultiThreadingSampleBPLibrary::CreateFThread(UMyFThread*& OutFThread)
 /*----------------------------------------------------------------------------------
 	Queued Thread Pool Samples
 ----------------------------------------------------------------------------------*/
-//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
+//When using Queued Thread Pool, user needs to implement IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FDummyEmptyWork :public IQueuedWork
 {
 public:
@@ -1184,7 +1184,7 @@ public:
 	}
 };
 
-//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
+//When using Queued Thread Pool, user needs to implement IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FFibonacciComputationWork :public IQueuedWork
 {
 public:
@@ -1218,7 +1218,7 @@ private:
 	int N = 0;
 };
 
-//When using Queued Thread Pool, user needs to impliment IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
+//When using Queued Thread Pool, user needs to implement IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
 class FOutputStringToLogWork :public IQueuedWork
 {
 public:

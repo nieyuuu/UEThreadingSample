@@ -258,46 +258,6 @@ void CodeSnippets()
 		Event->TryLaunch(0);
 	}
 
-	//Queued thread pool wrapper
-	{
-		struct DummyWork :public IQueuedWork
-		{
-			virtual void DoThreadedWork()override
-			{
-				delete this;
-			}
-
-			virtual void Abandon()override
-			{
-
-			}
-		};
-
-		//Task Graph System wrapper
-		{
-			auto PriorityMapper = [](EQueuedWorkPriority InPriority) -> ENamedThreads::Type
-				{
-					return ENamedThreads::AnyBackgroundThreadNormalTask;
-				};
-
-			TUniquePtr<FQueuedThreadPoolTaskGraphWrapper> TaskGraphWrapper = MakeUnique<FQueuedThreadPoolTaskGraphWrapper>(PriorityMapper);
-			((FQueuedThreadPool*)TaskGraphWrapper.Get())->AddQueuedWork(new DummyWork);
-		}
-
-		//Low Level Task System wrapper
-		{
-			auto PriorityMapper = [](EQueuedWorkPriority InPriority) -> EQueuedWorkPriority
-				{
-					return InPriority;
-				};
-
-			auto LowLevelTaskScheduler = &LowLevelTasks::FScheduler::Get();
-
-			TUniquePtr<FQueuedLowLevelThreadPool> LowLevelTaskWrapper = MakeUnique<FQueuedLowLevelThreadPool>(PriorityMapper, LowLevelTaskScheduler);
-			((FQueuedThreadPool*)LowLevelTaskWrapper.Get())->AddQueuedWork(new DummyWork);
-		}
-	}
-
 	//Promise and Future
 	{
 		TPromise<float> Promise;

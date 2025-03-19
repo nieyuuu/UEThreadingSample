@@ -2,28 +2,15 @@
 
 #include "ThreadingSample/ThreadingSample.h"
 
-template<class BuilderType, class ArrayElementType>
-const TCHAR* BuildStringFromArray(BuilderType& InStringBuilder, const TArray<ArrayElementType>& InArray)
-{
-	InStringBuilder << "[";
-
-	for (int i = 0; i < InArray.Num() - 1; ++i)
-	{
-		InStringBuilder << InArray[i] << ",";
-	}
-
-	InStringBuilder << InArray[InArray.Num() - 1] << "]";
-
-	return InStringBuilder.ToString();
-}
-
 //When using Queued Thread Pool, user needs to implement IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
-class FDummyEmptyWork :public IQueuedWork
+//User needs to manage the life cycle of the created work instances. In this work, we delete ourself once the work is done.
+class FSelfDeleteWork :public IQueuedWork
 {
 public:
 	virtual void DoThreadedWork()override
 	{
-		UE_LOG(LogThreadingSample, Display, TEXT("FDummyEmptyWork::DoThreadedWork()."));
+		UE_LOG(LogThreadingSample, Display, TEXT("FSelfDeleteWork::DoThreadedWork()."));
+		//Delete ourself when work is done
 		delete this;
 	}
 
@@ -44,154 +31,61 @@ public:
 
 	virtual const TCHAR* GetDebugName()const override
 	{
-		return TEXT("DummyEmptyWork");
+		return TEXT("SelfDeleteWork");
 	}
 };
 
-//When using Queued Thread Pool, user needs to implement IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
-class FFibonacciComputationWork :public IQueuedWork
+class FAutoDeleteWork :public FNonAbandonableTask
 {
-public:
-	virtual void DoThreadedWork()override
-	{
-		UE_LOG(LogThreadingSample, Display, TEXT("FFibonacciComputationWork::DoThreadedWork(). F(%d)=%d."), N, F(N));
-		delete this;
-	}
-
-	virtual void Abandon()override
-	{
-		//Do nothing
-	}
-
-	FFibonacciComputationWork(int N)
-	{
-		this->N = N;
-	}
-
+	//Declare FAutoDeleteAsyncTask<FAutoDeleteWork> as a friend so it can access the private members of this class.
+	friend class FAutoDeleteAsyncTask<FAutoDeleteWork>;
 private:
-	int F(int Num)
-	{
-		if (Num == 0)
-			return 0;
-		if (Num == 1 || Num == 2)
-			return 1;
+	//Keep the constructor private to prevent user creating instances of this class(except for the friend class).
+	FAutoDeleteWork() = default;
 
-		return F(Num - 1) + F(Num - 2);
-	}
-
-	int N = 0;
-};
-
-//When using Queued Thread Pool, user needs to implement IQueuedWork interface, and override DoThreadedWork() function(and other virtual functions if needed).
-class FOutputStringToLogWork :public IQueuedWork
-{
-public:
-	virtual void DoThreadedWork()override
-	{
-		UE_LOG(LogThreadingSample, Display, TEXT("FOutputStringToLogWork::DoThreadedWork(). Output content: %s."), *Content);
-		delete this;
-	}
-
-	virtual void Abandon()override
-	{
-		//Do nothing
-	}
-
-	virtual EQueuedWorkFlags GetQueuedWorkFlags()const override
-	{
-		return EQueuedWorkFlags::None;
-	}
-
-	virtual int64 GetRequiredMemory()const override
-	{
-		return -1;
-	}
-
-	virtual const TCHAR* GetDebugName()const override
-	{
-		return TEXT("OutputStringToLogTask");
-	}
-
-	FOutputStringToLogWork(const FString& InContent)
-	{
-		Content = InContent;
-	}
-
-private:
-	FString Content;
-};
-
-//The above tasks can be done using FAutoDeleteAsyncTask(as they delete themselves when task is done).
-class FAutoDeleteOutputStringToLogTask :public FNonAbandonableTask
-{
-	//Declare FAutoDeleteAsyncTask<FAutoDeleteOutputStringToLogTask> as a friend so it can access the private members of this class.
-	friend class FAutoDeleteAsyncTask<FAutoDeleteOutputStringToLogTask>;
-private:
-	FAutoDeleteOutputStringToLogTask(const FString& InContent) :Content(InContent)
-	{
-	}
-
-	//The threaded work to do.
+	//The threaded work to do
 	void DoWork()
 	{
-		UE_LOG(LogThreadingSample, Display, TEXT("FAutoDeleteOutputStringToLogTask::DoWork(). Output content: %s."), *Content);
+		UE_LOG(LogThreadingSample, Display, TEXT("FAutoDeleteWork::DoWork()."));
+		//We use FAutoDeleteAsyncTask<WorkType> to delete work instance, so no need to delete ourself here.
+		//delete this;
 	}
 
-	//Declare stat id.
+	//Declare stat id
 	FORCEINLINE TStatId GetStatId() const
 	{
-		RETURN_QUICK_DECLARE_CYCLE_STAT(FAutoDeleteOutputStringToLogTask, STATGROUP_ThreadPoolAsyncTasks);
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FAutoDeleteAsyncTask, STATGROUP_ThreadPoolAsyncTasks);
 	}
-
-	FString Content;
 };
 
-//A task that use FAsyncTask to perform threaded work.
-class FSortIntArrayTask :public FNonAbandonableTask
+class FGenerateRandomIntWork :public FNonAbandonableTask
 {
-	//Again declare FAsyncTask<FSortIntArrayTask> as a friend.
-	friend class FAsyncTask<FSortIntArrayTask>;
+	//Declare FAsyncTask<FGenerateRandomIntWork> as a friend.
+	friend class FAsyncTask<FGenerateRandomIntWork>;
 private:
-	FSortIntArrayTask(const TArray<int32>& InArray)
-		: ArrayToSort(InArray)
-	{
-	}
+	FGenerateRandomIntWork() = default;
 
-	//The threaded work to do.
+	//The threaded work to do
 	void DoWork()
 	{
-		if (!ArrayToSort.Num())
-		{
-			UE_LOG(LogThreadingSample, Warning, TEXT("Empty array!!!"));
-
-			return;
-		}
-
-		TStringBuilder<1024> StringBuilder;
-
-		FString Content = BuildStringFromArray(StringBuilder, ArrayToSort);
-		UE_LOG(LogThreadingSample, Display, TEXT("FSortIntArrayWork::Before sort: %s"), *Content);
-
-		Algo::Sort(ArrayToSort);
-
-		StringBuilder.Reset();
-
-		Content = BuildStringFromArray(StringBuilder, ArrayToSort);
-		UE_LOG(LogThreadingSample, Display, TEXT("FSortIntArrayWork::After sort: %s"), *Content);
+		WorkResult = FMath::RandRange(0, 100);
+		UE_LOG(LogThreadingSample, Display, TEXT("FGenerateRandomIntWork::DoWork(). FMath::RandRange(0, 100) returns %d."), WorkResult);
 	}
 
-	//Declare stat id.
+	//Declare stat id
 	FORCEINLINE TStatId GetStatId() const
 	{
-		RETURN_QUICK_DECLARE_CYCLE_STAT(FSortIntArrayTask, STATGROUP_ThreadPoolAsyncTasks);
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FGenerateRandomIntWork, STATGROUP_ThreadPoolAsyncTasks);
 	}
 
-	TArray<int32> ArrayToSort;
+private:
+	int32 WorkResult = -1;
 
 public:
-	const TArray<int32>& GetArray() const
+	//Interface for accessing result when work is done
+	const int32& GetResult()const
 	{
-		return ArrayToSort;
+		return WorkResult;
 	}
 };
 

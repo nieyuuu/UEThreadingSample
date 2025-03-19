@@ -23,6 +23,15 @@ enum class ELoadTextFileExecution : uint8
 	AsyncThreadInterface       //AsyncThread()
 };
 
+UENUM(BlueprintType)
+enum class EThreadPoolWrapperType : uint8
+{
+	SimpleWrapper,
+	DynamicWrapper,
+	TaskGraphWrapper,
+	LowLevelTaskWrapper,
+};
+
 //Wrap the result returned using task system
 UCLASS(BlueprintType)
 class UResultUsingTaskSystem :public UObject
@@ -203,7 +212,7 @@ class THREADINGSAMPLE_API UThreadingSampleBPLibrary : public UBlueprintFunctionL
 	static void ExecuteNestedTask(int InCurrentCallIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
-	static void RunLowLevelTaskTest();
+	static void RunLowLevelTaskTest(int InCurrentCallIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
 	static void CreateRunnable(UMyRunnable*& OutRunnable);
@@ -212,5 +221,8 @@ class THREADINGSAMPLE_API UThreadingSampleBPLibrary : public UBlueprintFunctionL
 	static void CreateFThread(UMyFThread*& OutFThread);
 
 	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
-	static void DoThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute, int32 InNumWorksForWrapper);
+	static void ThreadPoolCommonUsage();
+
+	UFUNCTION(BlueprintCallable, Category = "Threading Sample")
+	static void ThreadPoolWrapperUsage(EThreadPoolWrapperType InWrapperType, int32 InNumSubmittedWork, int32 InMaxConcurrency, bool InResumeHalfWorks);
 };

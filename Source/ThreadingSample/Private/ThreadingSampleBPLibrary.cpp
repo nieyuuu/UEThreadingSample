@@ -455,6 +455,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 				UE::Tasks::EExtendedTaskPriority::None
 			);
 
+			//We are lauching inside a task.
 			auto AnotherNestedTask = UE::Tasks::Launch(
 				UE_SOURCE_LOCATION,
 				[=]()
@@ -477,7 +478,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 	);
 
 	//Here we dont really care about the result, just wait with a timeout.
-	//OuterTask.Wait(FTimespan::FromMilliseconds(100));
+	OuterTask.Wait(FTimespan::FromMilliseconds(1));
 
 	//This can be true or false, depending on:
 	//1. Whether the nested tasks have completed or not.
@@ -488,51 +489,66 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 /*----------------------------------------------------------------------------------
 	Low Level Task Sample
 ----------------------------------------------------------------------------------*/
-void UThreadingSampleBPLibrary::RunLowLevelTaskTest()
+void UThreadingSampleBPLibrary::RunLowLevelTaskTest(int InCurrentCallIndex)
 {
-	int TestValue = 100;
+	auto TestBody = [=]() {
+		int TestValue = 100;
 
-	UE_LOG(LogThreadingSample, Display, TEXT("Begin Running Low Level Task Test. TestValue = %d"), TestValue);
+		UE_LOG(LogThreadingSample, Display, TEXT("Begin Running Low Level Task Test(CurrentIndex:%d). TestValue = %d"), InCurrentCallIndex, TestValue);
 
-	//Create a low level task.
-	TSharedPtr<LowLevelTasks::FTask> Task = MakeShared<LowLevelTasks::FTask>();
+		//Create a low level task.
+		TSharedPtr<LowLevelTasks::FTask> Task = MakeShared<LowLevelTasks::FTask>();
 
-	//Initialize the low level task.
-	Task->Init(
-		TEXT("SimpleLowLevelTask"),
-		LowLevelTasks::ETaskPriority::Default,
-		[&]() {
-			TestValue = 1337;
-		},
-		LowLevelTasks::ETaskFlags::DefaultFlags
-	);
+		//Initialize the low level task.
+		Task->Init(
+			TEXT("SimpleLowLevelTask"),
+			LowLevelTasks::ETaskPriority::Default,
+			[&]() {
+				TestValue = 1337;
+			},
+			LowLevelTasks::ETaskFlags::DefaultFlags
+		);
 
-	//Try to launch the task(the scheduler will handle this).
-	bool WasLaunched = LowLevelTasks::TryLaunch(*Task, LowLevelTasks::EQueuePreference::DefaultPreference, true/*bWakeUpWorker*/);
+		//Try to launch the task(the scheduler will handle this).
+		bool WasLaunched = LowLevelTasks::TryLaunch(*Task, LowLevelTasks::EQueuePreference::DefaultPreference, true/*bWakeUpWorker*/);
 
-	//Try to cancel the task.
-	bool WasCanceled = Task->TryCancel(LowLevelTasks::ECancellationFlags::DefaultFlags);
+		//Try to cancel the task.
+		bool WasCanceled = Task->TryCancel(LowLevelTasks::ECancellationFlags::DefaultFlags);
 
-	if (WasCanceled)
-	{
-		//Try to revive the task.
-		bool WasRevived = Task->TryRevive();
-
-		if (!WasRevived)
+		if (WasCanceled)
 		{
-			//Wait low level task system marks this task as completed.
-			while (!Task->IsCompleted())
-			{
-				FPlatformProcess::Sleep(0.005f);
-			}
+			//Try to revive the task.
+			bool WasRevived = Task->TryRevive();
 
-			check(Task->IsCompleted());
-			check(TestValue == 100); //TestValue is unchanged(we canceled this task and failed to revive it).
+			if (!WasRevived)
+			{
+				//Wait low level task system marks this task as completed.
+				while (!Task->IsCompleted())
+				{
+					FPlatformProcess::Sleep(0.005f);
+				}
+
+				check(Task->IsCompleted());
+				check(TestValue == 100); //TestValue is unchanged(we canceled this task and failed to revive it).
+			}
+			else
+			{
+				//We canceled this task and then succeed to revive it.
+				//Now we wait for the task to be completed.
+				while (!Task->IsCompleted())
+				{
+					FPlatformProcess::Sleep(0.005f);
+					//Try to expedite the task.
+					// bool WasExpedite = Task->TryExpedite();
+				}
+
+				check(Task->IsCompleted());
+				check(TestValue == 1337);
+			}
 		}
 		else
 		{
-			//We canceled this task and then succeed to revive it.
-			//Now we wait for the task to be completed.
+			//Wait for the task to be completed.
 			while (!Task->IsCompleted())
 			{
 				FPlatformProcess::Sleep(0.005f);
@@ -543,22 +559,12 @@ void UThreadingSampleBPLibrary::RunLowLevelTaskTest()
 			check(Task->IsCompleted());
 			check(TestValue == 1337);
 		}
-	}
-	else
-	{
-		//Wait for the task to be completed.
-		while (!Task->IsCompleted())
-		{
-			FPlatformProcess::Sleep(0.005f);
-			//Try to expedite the task.
-			// bool WasExpedite = Task->TryExpedite();
-		}
 
-		check(Task->IsCompleted());
-		check(TestValue == 1337);
-	}
+		UE_LOG(LogThreadingSample, Display, TEXT("End Running Low Level Task Test(CurrentIndex:%d). TestValue = %d"), InCurrentCallIndex, TestValue);
+		};
 
-	UE_LOG(LogThreadingSample, Display, TEXT("End Running Low Level Task Test. TestValue = %d"), TestValue);
+	//Execute test in Task Graph System
+	Async(EAsyncExecution::TaskGraph, TestBody);
 }
 
 /*----------------------------------------------------------------------------------
@@ -577,7 +583,7 @@ void UThreadingSampleBPLibrary::CreateFThread(UMyFThread*& OutFThread)
 /*----------------------------------------------------------------------------------
 	Queued Thread Pool Samples
 ----------------------------------------------------------------------------------*/
-void UThreadingSampleBPLibrary::DoThreadedWorkUsingQueuedThreadPool(const TArray<int32>& InArrayToSort, const FString& InStringToLog, int32 InFibonacciToCompute, int32 InNumWorksForWrapper)
+void UThreadingSampleBPLibrary::ThreadPoolCommonUsage()
 {
 	FQueuedThreadPool* ThreadPool = GThreadPool;
 
@@ -588,90 +594,171 @@ void UThreadingSampleBPLibrary::DoThreadedWorkUsingQueuedThreadPool(const TArray
 	check(ThreadPool);
 
 	//Simply add work to the thread pool.
-	ThreadPool->AddQueuedWork(new FDummyEmptyWork);
-	ThreadPool->AddQueuedWork(new FOutputStringToLogWork(InStringToLog));
+	ThreadPool->AddQueuedWork(new FSelfDeleteWork);
 
-	//Start executing the task(the task will be auto deleted).
-	(new FAutoDeleteAsyncTask<FAutoDeleteOutputStringToLogTask>(InStringToLog))->StartBackgroundTask(ThreadPool, EQueuedWorkPriority::Lowest);
-	//Or just run the task on current thread.
-	// (new FAutoDeleteAsyncTask<FAutoDeleteOutputStringToLogTask>(TEXT("Test from auto delete task")))->StartSynchronousTask();
+	auto AutoDeleteWork = new FAutoDeleteAsyncTask<FAutoDeleteWork>;
+	AutoDeleteWork->StartBackgroundTask(ThreadPool, EQueuedWorkPriority::Lowest);
+	//Or just execute this work on current thread
+	// AutoDeleteWork->StartSynchronousTask();
 
-	//Start executing the task.
-	auto SortArrayTask = new FAsyncTask<FSortIntArrayTask>(InArrayToSort);
-	SortArrayTask->StartBackgroundTask(ThreadPool, EQueuedWorkPriority::Highest);
-	//Or just run the task on current thread.
-	// SortArrayTask->StartSynchronousTask();
+	auto WorkWithCompletionCheck = new FAsyncTask<FGenerateRandomIntWork>;
+	WorkWithCompletionCheck->StartBackgroundTask(ThreadPool, EQueuedWorkPriority::Highest);
+	//Or just execute this work on current thread
+	// WorkWithCompletionCheck->StartSynchronousTask();
 
-	if (SortArrayTask->IsDone()) //See if the task has completed.
+	//Check work status
+	bool IsWorkDone = WorkWithCompletionCheck->IsWorkDone();
+	bool IsDone = WorkWithCompletionCheck->IsDone();
+	bool IsIdle = WorkWithCompletionCheck->IsIdle();
+
+	//Ensure work is completed
+	WorkWithCompletionCheck->EnsureCompletion(false/*bDoWorkOnThisThreadIfNotStarted*/, false/*bIsLatencySensitive*/);
+
+	//Get the user task
+	const FGenerateRandomIntWork& UserTask = WorkWithCompletionCheck->GetTask();
+
+	UE_LOG(LogThreadingSample, Display, TEXT("Retrieved FGenerateRandomIntWork result is %d."), UserTask.GetResult());
+
+	//Now that the work is done and we have retrieved the final result, we can delete the work.
+	delete WorkWithCompletionCheck;
+}
+
+void UThreadingSampleBPLibrary::ThreadPoolWrapperUsage(EThreadPoolWrapperType InWrapperType, int32 InNumSubmittedWork, int32 InMaxConcurrency, bool InResumeHalfWorks)
+{
+	if (InWrapperType == EThreadPoolWrapperType::TaskGraphWrapper || InWrapperType == EThreadPoolWrapperType::LowLevelTaskWrapper)
 	{
-		UE_LOG(LogThreadingSample, Display, TEXT("Sort array task has completed!"));
-	}
-	else if (SortArrayTask->IsWorkDone()) //See if the work is done(But the task might not be completed).
-	{
-		UE_LOG(LogThreadingSample, Display, TEXT("Sort array work is done!"));
-	}
-
-	UE_LOG(LogThreadingSample, Display, TEXT("Ensure sort array task completion!"));
-	SortArrayTask->EnsureCompletion(false/*bDoWorkOnThisThreadIfNotStarted*/, false/*bIsLatencySensitive*/);
-
-	//Retrieve the result(and do something).
-	FSortIntArrayTask& UserTask = SortArrayTask->GetTask();
-	TStringBuilder<1024> StringBuilder;
-	FString RetrievedResult = BuildStringFromArray(StringBuilder, UserTask.GetArray());
-	UE_LOG(LogThreadingSample, Display, TEXT("The retrieved sorted result: %s"), *RetrievedResult);
-
-	//Now the time to delete our task.
-	delete SortArrayTask;
-
-	/*----------------------------------------------------------------------------------
-	Queued Thread Pool Wrapper Samples
-	----------------------------------------------------------------------------------*/
-	//Clamp incase deep recursive call / integer overflow / stack overflow
-	InFibonacciToCompute = FMath::Clamp(InFibonacciToCompute, 0, 45);
-
-	InNumWorksForWrapper = FMath::Clamp(InNumWorksForWrapper, 1, 30);
-
-	FQueuedThreadPoolWrapper* Wrapper = GetQueuedThreadPoolWrapper();
-	for (int i = 0; i < InNumWorksForWrapper; ++i)
-	{
-		//We added with EQueuedWorkPriority::Highest, but they will be mapped to other priority based on the provided priority mapper.
-		//And we limited the max concurrency to 1 at the creation of this wrapper.
-		Wrapper->AddQueuedWork(new FFibonacciComputationWork(InFibonacciToCompute), EQueuedWorkPriority::Highest);
+		UE_LOG(LogThreadingSample, Display, TEXT("Max concurrency is not supported for thread poor wrapper type %d"), (int32)InWrapperType);
 	}
 
-	FQueuedThreadPoolDynamicWrapper* DynamicWrapper = GetQueuedThreadPoolDynamicWrapper();
-	//Initialize work weights and randomly shuffle works.
-	TArray<FWorkWithWeight*> Works;
-	for (int i = 0; i < InNumWorksForWrapper; ++i)
+	if (InWrapperType == EThreadPoolWrapperType::TaskGraphWrapper)
 	{
-		Works.Add(new FWorkWithWeight(float(i)));
-	}
-	Algo::RandomShuffle(Works);
-
-	//Pause the thread pool wrapper so we can sort/reorder works before it gets executed and check the results in logs.
-	DynamicWrapper->Pause();
-
-	//Start queueing works to the thread pool wrapper.
-	for (int i = 0; i < Works.Num(); ++i)
-	{
-		DynamicWrapper->AddQueuedWork(Works[i]);
+		UE_LOG(LogThreadingSample, Display, TEXT("Pause and Resume are not supported for thread poor wrapper type %d"), (int32)InWrapperType);
 	}
 
-	//The sort predicate which is based on the work weight.
-	//Theoretically you can do anything since you can get the work instance itself.
-	auto SortPredicate = [](const IQueuedWork* Lhs, const IQueuedWork* Rhs) {
-		const FWorkWithWeight* WorkA = (const FWorkWithWeight*)Lhs;
-		const FWorkWithWeight* WorkB = (const FWorkWithWeight*)Rhs;
+	if (InNumSubmittedWork <= 0)
+		return;
 
-		float WeightA = WorkA->GetWeight();
-		float WeightB = WorkB->GetWeight();
+	auto Task = [=]() {
+		if (InWrapperType == EThreadPoolWrapperType::SimpleWrapper)
+		{
+			FQueuedThreadPoolWrapper* Wrapper = GetQueuedThreadPoolWrapper();
+			Wrapper->SetMaxConcurrency(InMaxConcurrency);
 
-		return WeightA > WeightB;
-		};
+			//Pause the thread pool wrapper.
+			Wrapper->Pause();
 
-	//Do the sort operation.
-	DynamicWrapper->Sort(SortPredicate);
+			//Start queueing works to the thread pool wrapper.
+			for (int i = 0; i < InNumSubmittedWork; ++i)
+			{
+				Wrapper->AddQueuedWork(new FWorkWithWeight(float(i)), EQueuedWorkPriority::Normal);
+			}
 
-	//Resume the thread pool wrapper.
-	DynamicWrapper->Resume();
+			if (InResumeHalfWorks)
+			{
+				Wrapper->Resume(InNumSubmittedWork / 2);
+				//Sleep for a while
+				FPlatformProcess::Sleep(1.0);
+			}
+
+			//Unpause
+			Wrapper->Resume(-1);
+		}
+		else if (InWrapperType == EThreadPoolWrapperType::DynamicWrapper)
+		{
+			FQueuedThreadPoolDynamicWrapper* Wrapper = GetQueuedThreadPoolDynamicWrapper();
+			Wrapper->SetMaxConcurrency(InMaxConcurrency);
+
+			//Pause the thread pool wrapper so we can sort/reorder works before it gets executed and check the results in logs.
+			Wrapper->Pause();
+
+			//Initialize work weights and randomly shuffle works.
+			TArray<FWorkWithWeight*> Works;
+			for (int i = 0; i < InNumSubmittedWork; ++i)
+			{
+				Works.Add(new FWorkWithWeight(float(i)));
+			}
+			Algo::RandomShuffle(Works);
+
+			//Start queueing works to the thread pool wrapper.
+			for (int i = 0; i < Works.Num(); ++i)
+			{
+				Wrapper->AddQueuedWork(Works[i]);
+			}
+
+			//The sort predicate which is based on the work weight.
+			//Theoretically you can do anything since you can get the work instance itself.
+			auto SortPredicate = [](const IQueuedWork* Lhs, const IQueuedWork* Rhs) {
+				const FWorkWithWeight* WorkA = (const FWorkWithWeight*)Lhs;
+				const FWorkWithWeight* WorkB = (const FWorkWithWeight*)Rhs;
+
+				float WeightA = WorkA->GetWeight();
+				float WeightB = WorkB->GetWeight();
+
+				return WeightA > WeightB;
+				};
+
+			//Do the sort operation.
+			Wrapper->Sort(SortPredicate);
+
+			if (InResumeHalfWorks)
+			{
+				Wrapper->Resume(InNumSubmittedWork / 2);
+				//Sleep for a while
+				FPlatformProcess::Sleep(1.0);
+			}
+
+			//Unpause
+			Wrapper->Resume(-1);
+		}
+		else if (InWrapperType == EThreadPoolWrapperType::TaskGraphWrapper)
+		{
+			FQueuedThreadPoolTaskGraphWrapper* Wrapper = GetQueuedThreadPoolTaskGraphWrapper();
+
+			//The AddQueuedWork function is protected in wrapper class so we cast the wrapper to parent class
+			FQueuedThreadPool* ThreadPool = (FQueuedThreadPool*)Wrapper;
+
+			for (int i = 0; i < InNumSubmittedWork; ++i)
+			{
+				ThreadPool->AddQueuedWork(new FWorkWithWeight(float(i)), EQueuedWorkPriority::Normal);
+			}
+		}
+		else if (InWrapperType == EThreadPoolWrapperType::LowLevelTaskWrapper)
+		{
+			FQueuedLowLevelThreadPool* Wrapper = GetQueuedLowLevelThreadPool();
+
+			Wrapper->Pause();
+
+			//The AddQueuedWork function is protected in wrapper class so we cast the wrapper to parent class
+			FQueuedThreadPool* ThreadPool = (FQueuedThreadPool*)Wrapper;
+
+			for (int i = 0; i < InNumSubmittedWork; ++i)
+			{
+				ThreadPool->AddQueuedWork(new FWorkWithWeight(float(i)), EQueuedWorkPriority::Normal);
+			}
+
+			if (InResumeHalfWorks)
+			{
+				Wrapper->Resume(InNumSubmittedWork / 2);
+				//Sleep for a while
+				FPlatformProcess::Sleep(1.0);
+			}
+
+			//Unpause
+			Wrapper->Resume(-1);
+		}
+		else
+		{
+			check(false);
+		}
+	};
+
+	if (InResumeHalfWorks)
+	{
+		//Use Async because we might sleep for a while
+		Async(EAsyncExecution::Thread, Task);
+	}
+	else
+	{
+		Task();
+	}
 }

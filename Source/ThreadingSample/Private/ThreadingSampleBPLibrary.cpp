@@ -478,7 +478,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 	);
 
 	//Here we dont really care about the result, just wait with a timeout.
-	OuterTask.Wait(FTimespan::FromMilliseconds(1));
+	//OuterTask.Wait(FTimespan::FromMilliseconds(1));
 
 	//This can be true or false, depending on:
 	//1. Whether the nested tasks have completed or not.

@@ -145,37 +145,3 @@ private:
 	TWeakObjectPtr<UTexture2D> AlphaTexture;
 	TWeakObjectPtr<UTexture2D> CompositedTexture;
 };
-
-//The task graph system tasks
-class FUpdateResourceTask
-{
-public:
-	FUpdateResourceTask(TWeakObjectPtr<UTexture2D> InTextureToUpdate)
-		: TextureToUpdate(InTextureToUpdate)
-	{
-	}
-
-	TStatId GetStatId() const
-	{
-		RETURN_QUICK_DECLARE_CYCLE_STAT(FUpdateResourceTask, STATGROUP_TaskGraphTasks);
-	}
-
-	static ENamedThreads::Type GetDesiredThread()
-	{
-		//Executed on GameThread
-		return ENamedThreads::GameThread;
-	}
-
-	static ESubsequentsMode::Type GetSubsequentsMode()
-	{
-		return ESubsequentsMode::TrackSubsequents;
-	}
-
-	void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
-	{
-		TextureToUpdate->UpdateResource();
-	}
-
-private:
-	TWeakObjectPtr<UTexture2D> TextureToUpdate;
-};

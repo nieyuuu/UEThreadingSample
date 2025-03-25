@@ -30,6 +30,7 @@ void ATaskTextureFilter::Tick(float InDeltaTime)
 	}
 }
 
+//TODO:Dont Repeat Yourself
 void ATaskTextureFilter::StartProcessing(UTexture2D* InSourceTexture)
 {
 	if (InSourceTexture)

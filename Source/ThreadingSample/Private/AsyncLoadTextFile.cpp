@@ -68,10 +68,9 @@ UTextFileResult* LoadTextFile_AsyncTaskInterface(const FString& InFileName, floa
 
 	AsyncTask(
 		ENamedThreads::AnyThread,
-		[LocalPromise = MoveTemp(Promise), &InFileName, InSleepTimeInSeconds]() {
-			TPromise<FString>& MutablePromise = const_cast<TPromise<FString>&>(LocalPromise);
+		[LocalPromise = MoveTemp(Promise), &InFileName, InSleepTimeInSeconds]() mutable {
 			//Set promise value in task body
-			MutablePromise.SetValue(LoadTextFileToString(InFileName, InSleepTimeInSeconds));
+			LocalPromise.SetValue(LoadTextFileToString(InFileName, InSleepTimeInSeconds));
 		}
 	);
 

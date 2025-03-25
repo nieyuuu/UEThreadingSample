@@ -245,9 +245,12 @@ void UThreadingSampleBPLibrary::FilterTextureUsingTaskGraphSystem(UTexture2D* In
 	FGraphEventArray Prerequisites1;
 	Prerequisites1.Add(VerticalPassTask);
 
-	auto VerticalPassResultUpdateTask = TGraphTask<FUpdateResourceTask>::CreateTask(
-		&Prerequisites1, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
-			TWeakObjectPtr<UTexture2D>(VerticalPassResult));
+	//The predefined task type which takes a function as its task body
+	auto VerticalPassResultUpdateTask = FFunctionGraphTask::CreateAndDispatchWhenReady(
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(VerticalPassResult)]() {
+			TextureToUpdate->UpdateResource();
+		},
+		TStatId{}, &Prerequisites1, ENamedThreads::GameThread);
 
 	FGraphEventArray Prerequisites2;
 	Prerequisites2.Add(VerticalPassResultUpdateTask);
@@ -261,9 +264,12 @@ void UThreadingSampleBPLibrary::FilterTextureUsingTaskGraphSystem(UTexture2D* In
 	FGraphEventArray Prerequisites3;
 	Prerequisites3.Add(HorizontalPassTask);
 
-	auto HorizontalPassResultUpdateTask = TGraphTask<FUpdateResourceTask>::CreateTask(
-		&Prerequisites3, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
-			TWeakObjectPtr<UTexture2D>(HorizontalPassResult));
+	//The predefined task type which takes a function as its task body
+	auto HorizontalPassResultUpdateTask = FFunctionGraphTask::CreateAndDispatchWhenReady(
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(HorizontalPassResult)]() {
+			TextureToUpdate->UpdateResource();
+		},
+		TStatId{}, &Prerequisites3, ENamedThreads::GameThread);
 
 	auto ScaleAlphaChannelTask = InHoldSourceTasks ?
 		TGraphTask<FScaleAlphaChannelTask>::CreateTask(
@@ -280,9 +286,12 @@ void UThreadingSampleBPLibrary::FilterTextureUsingTaskGraphSystem(UTexture2D* In
 	FGraphEventArray Prerequisites4;
 	Prerequisites4.Add(ScaleAlphaChannelTask);
 
-	auto ScaleAlphaChannelResultUpdateTask = TGraphTask<FUpdateResourceTask>::CreateTask(
-		&Prerequisites4, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
-			TWeakObjectPtr<UTexture2D>(ScaleAlphaChannelResult));
+	//The predefined task type which takes a function as its task body
+	auto ScaleAlphaChannelResultUpdateTask = FFunctionGraphTask::CreateAndDispatchWhenReady(
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(ScaleAlphaChannelResult)]() {
+			TextureToUpdate->UpdateResource();
+		},
+		TStatId{}, &Prerequisites4, ENamedThreads::GameThread);
 
 	FGraphEventArray Prerequisites5;
 	Prerequisites5.Add(HorizontalPassResultUpdateTask);
@@ -297,9 +306,12 @@ void UThreadingSampleBPLibrary::FilterTextureUsingTaskGraphSystem(UTexture2D* In
 	FGraphEventArray Prerequisites6;
 	Prerequisites6.Add(CompositeTask);
 
-	auto CompositeResultUpdateTask = TGraphTask<FUpdateResourceTask>::CreateTask(
-		&Prerequisites6, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
-			TWeakObjectPtr<UTexture2D>(CompositeResult));
+	//The predefined task type which takes a function as its task body
+	auto CompositeResultUpdateTask = FFunctionGraphTask::CreateAndDispatchWhenReady(
+		[TextureToUpdate = TWeakObjectPtr<UTexture2D>(CompositeResult)]() {
+			TextureToUpdate->UpdateResource();
+		},
+		TStatId{}, &Prerequisites6, ENamedThreads::GameThread);
 
 	if (InHoldSourceTasks)
 	{

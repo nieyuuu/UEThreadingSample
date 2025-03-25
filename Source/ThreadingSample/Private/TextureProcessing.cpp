@@ -75,7 +75,7 @@ void ComputeGaussianFilterKernel(int32 InFilterSize, EConvolutionType InConvolut
 			for (int y = -HalfSize; y <= HalfSize; ++y)
 			{
 				const float Factor = 1.0f / (2.0f * PI * Sigma * Sigma);
-				const float Exp = FMath::Exp((x * x + y * y) / (2.0f * Sigma * Sigma));
+				const float Exp = FMath::Exp(-(x * x + y * y) / (2.0f * Sigma * Sigma));
 
 				OutWeights.Add(Factor * Exp);
 				OutOffsets.Add(FIntPoint(x, y));
@@ -87,7 +87,7 @@ void ComputeGaussianFilterKernel(int32 InFilterSize, EConvolutionType InConvolut
 		for (int i = -HalfSize; i <= HalfSize; ++i)
 		{
 			const float Factor = 1.0f / (FMath::Sqrt(2.0f * PI) * Sigma);
-			const float Exp = FMath::Exp((i * i) / (2.0f * Sigma * Sigma));
+			const float Exp = FMath::Exp(-(i * i) / (2.0f * Sigma * Sigma));
 
 			OutWeights.Add(Factor * Exp);
 

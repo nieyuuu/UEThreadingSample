@@ -2,6 +2,8 @@
 
 #include "Misc/QueuedThreadPoolWrapper.h"
 
+//Wrapper that allowing to schedule up to MaxConcurrency tasks at a time and allowing more fine-gained control over scheduling by
+//effectively giving another set of prioriries.
 FQueuedThreadPoolWrapper* GetQueuedThreadPoolWrapper()
 {
 	static FQueuedThreadPoolWrapper* GThreadPoolWrapper = nullptr;
@@ -27,6 +29,8 @@ FQueuedThreadPoolWrapper* GetQueuedThreadPoolWrapper()
 	return GThreadPoolWrapper;
 }
 
+//Wrapper that allowing to schedule up to MaxConcurrency tasks at a time and allowing more fine-gained control over scheduling by
+//giving full control of task reordering.
 FQueuedThreadPoolDynamicWrapper* GetQueuedThreadPoolDynamicWrapper()
 {
 	static FQueuedThreadPoolDynamicWrapper* GThreadPoolDynamicWrapper = nullptr;
@@ -52,7 +56,7 @@ FQueuedThreadPoolDynamicWrapper* GetQueuedThreadPoolDynamicWrapper()
 	return GThreadPoolDynamicWrapper;
 }
 
-//Wrapper that allowing to schedule thread pool tasks on the Task Graph System
+//Wrapper that allowing to schedule thread pool tasks on the Task Graph System.
 FQueuedThreadPoolTaskGraphWrapper* GetQueuedThreadPoolTaskGraphWrapper()
 {
 	static FQueuedThreadPoolTaskGraphWrapper* GThreadPoolTaskGraphWrapper = nullptr;
@@ -71,7 +75,7 @@ FQueuedThreadPoolTaskGraphWrapper* GetQueuedThreadPoolTaskGraphWrapper()
 	return GThreadPoolTaskGraphWrapper;
 }
 
-//Wrapper that allowing to schedule thread pool tasks on the the low level backend which is also used by the Task Graph System
+//Wrapper that allowing to schedule thread pool tasks on the the low level backend which is also used by the Task Graph System.
 FQueuedLowLevelThreadPool* GetQueuedLowLevelThreadPool()
 {
 	static FQueuedLowLevelThreadPool* GQueuedLowLevelThreadPool = nullptr;

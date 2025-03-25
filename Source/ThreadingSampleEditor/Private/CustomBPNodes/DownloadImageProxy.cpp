@@ -19,6 +19,7 @@ UAsyncDownloadImageProxy* UAsyncDownloadImageProxy::CreateAsyncDownloadImageProx
 	return Proxy;
 }
 
+//TODO:Dont Repeat Yourself
 void UAsyncDownloadImageProxy::Start(const FString& InURL)
 {
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
@@ -28,6 +29,7 @@ void UAsyncDownloadImageProxy::Start(const FString& InURL)
 	HttpRequest->ProcessRequest();
 }
 
+//TODO:Dont Repeat Yourself
 void UAsyncDownloadImageProxy::HandleImageRequest(FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bSucceeded)
 {
 	if (bSucceeded && HttpResponse.IsValid() && EHttpResponseCodes::IsOk(HttpResponse->GetResponseCode()) && HttpResponse->GetContentLength() > 0 && HttpResponse->GetContent().Num() > 0)

@@ -25,6 +25,7 @@ UAsyncDownloadImage* UAsyncDownloadImage::AsyncDownloadImage(const FString& InUR
 	return DownloadTask;
 }
 
+//TODO:Dont Repeat Yourself
 void UAsyncDownloadImage::Start(const FString& InURL)
 {
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
@@ -34,6 +35,7 @@ void UAsyncDownloadImage::Start(const FString& InURL)
 	HttpRequest->ProcessRequest();
 }
 
+//TODO:Dont Repeat Yourself
 void UAsyncDownloadImage::HandleImageRequest(FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bSucceeded)
 {
 	if (bSucceeded && HttpResponse.IsValid() && EHttpResponseCodes::IsOk(HttpResponse->GetResponseCode()) && HttpResponse->GetContentLength() > 0 && HttpResponse->GetContent().Num() > 0)

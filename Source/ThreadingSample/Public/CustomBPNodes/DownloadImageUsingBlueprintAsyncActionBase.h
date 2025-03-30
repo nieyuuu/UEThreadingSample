@@ -11,7 +11,7 @@ class UTexture2DDynamic;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAsyncDownloadImageDelegate, UTexture2DDynamic*, Texture, int32, SizeX, int32, SizeY);
 
 UCLASS()
-class UAsyncDownloadImage : public UBlueprintAsyncActionBase
+class UAsyncDownloadImage :public UBlueprintAsyncActionBase
 {
 	GENERATED_UCLASS_BODY()
 

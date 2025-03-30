@@ -62,9 +62,11 @@ void UThreadingSampleBPLibrary::FilterTextureUsingParallelFor(UTexture2D* InSour
 		UTexture2D* ScaleAlphaResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaResult"));
 		UTexture2D* CompositeResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("CompositeResult"));
 
+		//1D vertical pass
 		FilterTexture(InSourceTexture, VerticalPassResult, InFilterType, InFilterSize, EConvolutionType::OneDVertical, InForceSingleThread);
 		VerticalPassResult->UpdateResource();
 
+		//1D horizontal pass
 		FilterTexture(VerticalPassResult, HorizontalPassResult, InFilterType, InFilterSize, EConvolutionType::OneDHorizontal, InForceSingleThread);
 		HorizontalPassResult->UpdateResource();
 
@@ -82,6 +84,7 @@ void UThreadingSampleBPLibrary::FilterTextureUsingParallelFor(UTexture2D* InSour
 		UTexture2D* ScaleAlphaResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("ScaleAlphaResult"));
 		UTexture2D* CompositeResult = CreateTransientTextureFromSource(InSourceTexture, TEXT("CompositeResult"));
 
+		//A single 2d pass
 		FilterTexture(InSourceTexture, FilteredResult, InFilterType, InFilterSize, EConvolutionType::TwoD, InForceSingleThread);
 		FilteredResult->UpdateResource();
 
@@ -479,6 +482,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 				UE::Tasks::EExtendedTaskPriority::None
 			);
 
+			//Add nested tasks inside parent task body.
 			UE::Tasks::AddNested(AnotherNestedTask);
 			UE::Tasks::AddNested(NestedTask);
 
@@ -639,12 +643,12 @@ void UThreadingSampleBPLibrary::ThreadPoolWrapperUsage(EThreadPoolWrapperType In
 {
 	if (InWrapperType == EThreadPoolWrapperType::TaskGraphWrapper || InWrapperType == EThreadPoolWrapperType::LowLevelTaskWrapper)
 	{
-		UE_LOG(LogThreadingSample, Display, TEXT("Max concurrency is not supported for thread poor wrapper type %d"), (int32)InWrapperType);
+		UE_LOG(LogThreadingSample, Display, TEXT("Max concurrency is not supported for thread pool wrapper type %d"), (int32)InWrapperType);
 	}
 
 	if (InWrapperType == EThreadPoolWrapperType::TaskGraphWrapper)
 	{
-		UE_LOG(LogThreadingSample, Display, TEXT("Pause and Resume are not supported for thread poor wrapper type %d"), (int32)InWrapperType);
+		UE_LOG(LogThreadingSample, Display, TEXT("Pause and Resume are not supported for thread pool wrapper type %d"), (int32)InWrapperType);
 	}
 
 	if (InNumSubmittedWork <= 0)

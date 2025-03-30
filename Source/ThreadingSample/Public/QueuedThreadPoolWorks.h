@@ -54,7 +54,7 @@ private:
 	//Declare stat id
 	FORCEINLINE TStatId GetStatId() const
 	{
-		RETURN_QUICK_DECLARE_CYCLE_STAT(FAutoDeleteAsyncTask, STATGROUP_ThreadPoolAsyncTasks);
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FAutoDeleteWork, STATGROUP_ThreadPoolAsyncTasks);
 	}
 };
 

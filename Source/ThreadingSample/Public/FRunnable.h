@@ -52,7 +52,8 @@ public:
 	//Tick() will be called when multi threading is not supported on current platform or is disabled by commandline(-nothreading) or some other settings
 	virtual void Tick() override
 	{
-		ThreadedWork();
+		if(!Stopped)
+			ThreadedWork();
 	}
 	//End FSingleThreadRunnable
 

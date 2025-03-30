@@ -245,7 +245,7 @@ void CodeSnippets()
 
 		//Wait here will not deadlock
 		//1. If we process thread until idle.
-		//2. Or if we procee thread until explicitly request return.
+		//2. Or if we process thread until explicitly request return.
 		//3. Even if we dont perform the above operations, Wait() itself will help with that.
 		GameThreadTask->Wait();
 	}

@@ -35,7 +35,11 @@ UTextFileResult* LoadTextFile_AsyncPoolInterface(const FString& InFileName, floa
 {
 	auto Result = NewObject<UTextFileResult>();
 	Result->SetResult(InFileName, AsyncPool(
+#if WITH_EDITOR
+		*GLargeThreadPool,
+#else
 		*GThreadPool,
+#endif
 		[&InFileName, InSleepTimeInSeconds]() {
 			return LoadTextFileToString(InFileName, InSleepTimeInSeconds);
 		},
@@ -63,7 +67,7 @@ UTextFileResult* LoadTextFile_AsyncTaskInterface(const FString& InFileName, floa
 {
 	//The promise and future
 	TPromise<FString> Promise;
-	auto Future = Promise.GetFuture();
+	TFuture<FString> Future = Promise.GetFuture();
 	auto Result = NewObject<UTextFileResult>();
 
 	AsyncTask(

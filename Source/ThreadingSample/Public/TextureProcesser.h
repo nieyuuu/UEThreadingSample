@@ -18,7 +18,7 @@ class ATaskTextureFilter :public AActor
 	ATaskTextureFilter();
 
 	UPROPERTY(EditAnywhere)
-	EFilterType FilterType;
+	EFilterType FilterType = EFilterType::BoxFilter;
 
 	UPROPERTY(EditAnywhere, Meta=(ClampMin = 3, ClampMax = 127))
 	int32 FilterSize = 27;
@@ -27,7 +27,7 @@ class ATaskTextureFilter :public AActor
 	float ScaleValue = 1.0f;
 
 protected:
-	UTexture2D* ProcessedResult;
+	UTexture2D* ProcessedResult = nullptr;
 
 	UPROPERTY(BlueprintAssignable)
 	FOnProcessFinished OnProcessFinished;

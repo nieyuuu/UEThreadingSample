@@ -10,6 +10,8 @@ public class ThreadingSample : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "AtomicQueue" , "RenderCore", "HTTP", "CoreUObject" });
 
+		PublicDefinitions.Add("TASKGRAPH_NEW_FRONTEND=1");
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

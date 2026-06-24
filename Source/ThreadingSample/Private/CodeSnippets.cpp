@@ -6,7 +6,7 @@
 #include "Async/Mutex.h"
 #include "Async/RecursiveMutex.h"
 
-static thread_local int ThreadLocalVariable = -1;
+thread_local int ThreadLocalVariable = -1;
 
 void CodeSnippets()
 {
@@ -172,7 +172,7 @@ void CodeSnippets()
 		//This is convenient when you need to control the completion of a task (which is normally flagged
 		//automatically by the task system).
 		//Some time later, trigger the event to manually complete the outer task.
-		FPlatformProcess::Sleep(0.05);
+		FPlatformProcess::Sleep(0.05f);
 		Event.Trigger();
 	}
 
@@ -406,7 +406,7 @@ void CodeSnippets()
 		CS.Lock();
 		{
 			//Within this scope the mutex remains unlocked and will lock when goes out of this scope
-			UE::TScopeUnlock Unlock(CS);
+			UE::TScopeUnlock Unlock(&CS);
 		}
 		CS.Unlock();
 	}

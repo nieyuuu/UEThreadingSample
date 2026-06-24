@@ -1,32 +1,31 @@
 {
-  "FileVersion": 3,
-  "EngineAssociation": "{B12319F8-4E33-E6A0-20E3-C3BBB9DD7D7B}",
-  "Category": "",
-  "Description": "",
-  "Modules": [
-    {
-      "Name": "ThreadingSample",
-      "Type": "Runtime",
-      "LoadingPhase": "Default",
-      "AdditionalDependencies": [
-        "Engine"
-      ]
-    },
-    {
-      "Name": "ThreadingSampleEditor",
-      "Type": "Editor",
-      "LoadingPhase": "Default",
-      "AdditionalDependencies": [
-      ]
-    }
-  ],
-  "Plugins": [
-    {
-      "Name": "ModelingToolsEditorMode",
-      "Enabled": true,
-      "TargetAllowList": [
-        "Editor"
-      ]
-    }
-  ]
+	"FileVersion": 3,
+	"EngineAssociation": "{7A6A1E27-45CA-65FA-F252-4382680ADC5A}",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "ThreadingSample",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine"
+			]
+		},
+		{
+			"Name": "ThreadingSampleEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": []
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
+	]
 }

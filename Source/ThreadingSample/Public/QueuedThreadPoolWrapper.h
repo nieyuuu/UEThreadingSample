@@ -56,6 +56,7 @@ FQueuedThreadPoolDynamicWrapper* GetQueuedThreadPoolDynamicWrapper()
 	return GThreadPoolDynamicWrapper;
 }
 
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 //Wrapper that allowing to schedule thread pool tasks on the Task Graph System.
 FQueuedThreadPoolTaskGraphWrapper* GetQueuedThreadPoolTaskGraphWrapper()
 {
@@ -74,6 +75,7 @@ FQueuedThreadPoolTaskGraphWrapper* GetQueuedThreadPoolTaskGraphWrapper()
 
 	return GThreadPoolTaskGraphWrapper;
 }
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 //Wrapper that allowing to schedule thread pool tasks on the the low level backend which is also used by the Task Graph System.
 FQueuedLowLevelThreadPool* GetQueuedLowLevelThreadPool()

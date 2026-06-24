@@ -464,7 +464,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 				[=]()
 				{
 					UE_LOG(LogThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
-					FPlatformProcess::Sleep(0.3);
+					FPlatformProcess::Sleep(0.3f);
 				},
 				UE::Tasks::ETaskPriority::BackgroundLow,
 				UE::Tasks::EExtendedTaskPriority::None
@@ -476,7 +476,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 				[=]()
 				{
 					UE_LOG(LogThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing another nested task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
-					FPlatformProcess::Sleep(0.4);
+					FPlatformProcess::Sleep(0.4f);
 				},
 				UE::Tasks::ETaskPriority::BackgroundLow,
 				UE::Tasks::EExtendedTaskPriority::None
@@ -487,7 +487,7 @@ void UThreadingSampleBPLibrary::ExecuteNestedTask(int InCurrentCallIndex)
 			UE::Tasks::AddNested(NestedTask);
 
 			UE_LOG(LogThreadingSample, Display, TEXT("CurrentIndex:%d(ThreadID:%d):Executing outer task."), InCurrentCallIndex, FPlatformTLS::GetCurrentThreadId());
-			FPlatformProcess::Sleep(0.1);
+			FPlatformProcess::Sleep(0.1f);
 		},
 		UE::Tasks::ETaskPriority::BackgroundLow,
 		UE::Tasks::EExtendedTaskPriority::None
@@ -728,7 +728,9 @@ void UThreadingSampleBPLibrary::ThreadPoolWrapperUsage(EThreadPoolWrapperType In
 		}
 		else if (InWrapperType == EThreadPoolWrapperType::TaskGraphWrapper)
 		{
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
 			FQueuedThreadPoolTaskGraphWrapper* Wrapper = GetQueuedThreadPoolTaskGraphWrapper();
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 			//The AddQueuedWork function is protected in wrapper class so we cast the wrapper to parent class
 			FQueuedThreadPool* ThreadPool = (FQueuedThreadPool*)Wrapper;
